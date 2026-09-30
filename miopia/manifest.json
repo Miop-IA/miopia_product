@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Leitor de Notícias",
+  "version": "1.0",
+  "description": "Lê o texto de notícias da página ativa e exibe no popup.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["scripts/content.js"]
+    }
+  ]
+}
