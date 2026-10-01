@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Resumidor de Notícias",
+  "version": "1.2",
+  "description": "Lê notícias da página ativa e resume com o Gemini.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
