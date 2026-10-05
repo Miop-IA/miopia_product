@@ -1,2 +1,43 @@
-backend/.venv
+# Python & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# Ambientes Virtuais
+.venv/
+venv/
+env/
+ENV/
+backend/.venv/
+
+# Variáveis de Ambiente e Segredos
+.env
+.env.*
 backend/.env
+backend/.env.*
+*.key
+*.pem
+
+# Testes, Cobertura e Caches
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node & Dependências Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+
+# Editores e Sistema Operacional
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

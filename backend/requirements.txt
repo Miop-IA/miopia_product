@@ -1,5 +1,7 @@
 fastapi==0.142.2
 uvicorn[standard]==0.54.0
+spacy>=3.7.0
+pyspellchecker>=0.8.0
 sqlalchemy==2.1.1
 psycopg2-binary==2.9.13
 pydantic-settings==2.15.0
