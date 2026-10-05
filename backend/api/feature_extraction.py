@@ -8,17 +8,17 @@ logger = logging.getLogger(__name__)
 
 # Carregamento resiliente do modelo SpaCy
 def _load_spacy_model():
-    models_to_try = ["pt_core_news_lg", "pt_core_news_md", "pt_core_news_sm"]
+    models_to_try = ["pt_core_news_sm", "pt_core_news_md", "pt_core_news_lg"]
     for model_name in models_to_try:
         try:
-            loaded_nlp = spacy.load(model_name)
+            loaded_nlp = spacy.load(model_name, disable=["ner"])
             logger.info(f"Modelo SpaCy carregado com sucesso: {model_name}")
             return loaded_nlp
         except OSError:
             continue
     raise RuntimeError(
         "Nenhum modelo SpaCy em português encontrado. "
-        "Instale executando: python -m spacy download pt_core_news_lg"
+        "Instale executando: pip install pt_core_news_sm ou python -m spacy download pt_core_news_sm"
     )
 
 nlp = _load_spacy_model()

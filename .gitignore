@@ -1,28 +1,31 @@
-# Python & Bytecode
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-build/
-dist/
-*.egg-info/
-
-# Ambientes Virtuais
+# Ambientes virtuais
 .venv/
 venv/
-env/
 ENV/
+env/
 backend/.venv/
 
-# Variáveis de Ambiente e Segredos
+# Ficheiros de ambiente e variáveis secretas
 .env
+.env.local
 .env.*
+.env.*.local
 backend/.env
 backend/.env.*
 *.key
 *.pem
 
-# Testes, Cobertura e Caches
+# Python cache e compilação
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# Ferramentas de teste e cobertura
 .pytest_cache/
 .coverage
 htmlcov/
@@ -34,10 +37,18 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 
-# Editores e Sistema Operacional
-.vscode/
-.idea/
-*.swp
-*.swo
+# Logs e ficheiros temporários do sistema
+*.log
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Banco de dados local SQLite
+*miopia_local.db
+
+# NUNCA ignorar os modelos e artefatos de IA necessários para o deploy
+!backend/models/
+!backend/models/*
