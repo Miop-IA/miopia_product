@@ -1,2 +1,35 @@
-backend/.venv
-backend/.env
+# Ambientes virtuais
+.venv/
+venv/
+ENV/
+env/
+
+# Ficheiros de ambiente e variáveis secretas
+.env
+.env.local
+.env.*.local
+
+# Python cache e compilação
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Ferramentas de teste e cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs e ficheiros temporários do sistema
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# NUNCA ignorar os modelos e artefatos de IA necessários para o deploy
+!backend/models/
+!backend/models/*
+
+*miopia_local.db
