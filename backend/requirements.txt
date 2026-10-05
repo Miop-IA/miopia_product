@@ -5,14 +5,14 @@ pydantic-settings==2.5.2
 
 # Banco de Dados e ORM (PostgreSQL / Neon)
 SQLAlchemy==2.0.35
-psycopg2-binary==2.9.9
+psycopg2-binary>=2.9.9
 alembic==1.13.3
 
 # Machine Learning, Inferência e Serialização
 scikit-learn==1.5.2
 xgboost==2.1.1
 joblib==1.4.2
-numpy>=2.1.0
+numpy>=1.26.4,<2.0.0
 pandas==2.2.3
 
 # Processamento de Linguagem Natural (NLP)
