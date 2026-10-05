@@ -28,16 +28,21 @@ function extractNewsContent() {
   // 1. Seletores específicos do corpo de texto da notícia
   const bodySelectors = [
     '[itemprop="articleBody"]',
-    '.c-news__body',           // UOL
+    '.c-news__body',           // UOL / Folha
+    '.news-body',              // Estadão
     '.content-text',           // G1 / Globo
+    '.mc-article-body',        // G1 Globo
     '.materia-conteudo',       // R7
-    '.conteudo-materia',
+    '.conteudo-materia',       // Metrópoles / R7
+    '.m-article__content',     // Metrópoles
     '.article__content',
+    '.article__body',
     '.article-body',
     '.article-text',
     '.entry-content',
     '.story-body',
-    '.post-content',
+    '.post-content',           // CNN Brasil / Poder360 / WordPress
+    '.n--noticia__content',    // Estadão
     'article .text',           // UOL
     '.text',
     'article',
@@ -88,14 +93,16 @@ function extractNewsContent() {
     '[class*="caption"]', '[class*="legenda"]', '[class*="credito"]',
     // Disclaimers, caixas de opinião institucional, reportar erro
     '[class*="disclaimer"]', '[class*="aviso"]', '[class*="comunicar"]', '[class*="erro"]',
-    '[class*="opiniao-box"]', '[class*="report"]',
+    '[class*="opiniao-box"]', '[class*="report-error"]', '[class*="reportar-erro"]', '[class*="report-button"]', '[class*="reportar"]',
     // Comentários
     '[class*="comment"]', '[class*="comentario"]', '[id*="comment"]', '[id*="comentario"]',
     // Redes sociais e newsletters
     '[class*="share"]', '[class*="social"]', '[class*="compartilh"]', '[class*="newsletter"]',
     // Links recomendados e tags
     '[class*="relacionad"]', '[class*="recommended"]', '[class*="tags"]', '[class*="tag-"]',
-    '[class*="veja-mais"]', '[class*="leia-mais"]'
+    '[class*="veja-mais"]', '[class*="leia-mais"]',
+    // Caixas de resumo automático de IA
+    '[class*="resumo-ia"]', '[class*="ai-summary"]', '[class*="ia-summary"]'
   ];
 
   noiseSelectors.forEach((sel) => {
@@ -130,7 +137,15 @@ function extractNewsContent() {
     /^leia\s+também/i,
     /^leia\s+mais/i,
     /^todos\s+os\s+direitos\s+reservados/i,
-    /^compartilhe:\s*/i
+    /^compartilhe:\s*/i,
+    /^adicione\s+como\s+fonte\s+preferencial/i,
+    /^produzido\s+pela\s+ri7a/i,
+    /^gerando\s+resumo/i,
+    /^siga\s+(o|a)?\s*(nosso|nossa)?\s*canal/i,
+    /^receba\s+(no|as)\s+whatsapp/i,
+    /^conteúdo\s+criado\s+em\s+parceria/i,
+    /^clique\s+aqui\s+para\s+seguir/i,
+    /^fonte:\s*/i
   ];
 
   // 5. Extração baseada em parágrafos reais (<p>)

@@ -38,6 +38,11 @@ TAIL_BOILERPLATE_PATTERNS = [
     re.compile(r'(?i)deixe\s+seu\s+comentário.*', re.DOTALL),
     re.compile(r'(?i)o\s+autor\s+da\s+mensagem.*', re.DOTALL),
     re.compile(r'(?i)leia\s+as\s+regras\s+de\s+uso.*', re.DOTALL),
+    re.compile(r'(?i)adicione\s+como\s+fonte\s+preferencial.*', re.DOTALL),
+    re.compile(r'(?i)produzido\s+pela\s+ri7a.*', re.DOTALL),
+    re.compile(r'(?i)gerando\s+resumo.*', re.DOTALL),
+    re.compile(r'(?i)siga\s+(o|a)?\s*(nosso|nossa)?\s*canal.*', re.DOTALL),
+    re.compile(r'(?i)conteúdo\s+criado\s+em\s+parceria.*', re.DOTALL),
 ]
 
 def sanitizar_texto_noticia(texto: str) -> str:
