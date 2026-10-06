@@ -1,19 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "Leitor de Notícias",
-  "version": "1.0",
-  "description": "Lê o texto de notícias da página ativa e exibe no popup.",
+  "name": "MiopIA - Análise de Notícias",
+  "version": "1.0.0",
+  "description": "Extrai e analisa características estilométricas e de credibilidade em notícias online.",
   "permissions": [
     "activeTab",
     "scripting"
   ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_title": "MiopIA"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["scripts/content.js"]
+      "js": ["scripts/readability.js", "scripts/content.js"]
     }
   ]
 }

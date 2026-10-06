@@ -3,11 +3,17 @@
 venv/
 ENV/
 env/
+backend/.venv/
 
 # Ficheiros de ambiente e variáveis secretas
 .env
 .env.local
+.env.*
 .env.*.local
+backend/.env
+backend/.env.*
+*.key
+*.pem
 
 # Python cache e compilação
 __pycache__/
@@ -15,11 +21,21 @@ __pycache__/
 *$py.class
 *.so
 .Python
+build/
+dist/
+*.egg-info/
 
 # Ferramentas de teste e cobertura
 .pytest_cache/
 .coverage
 htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node & Dependências Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
 
 # Logs e ficheiros temporários do sistema
 *.log
@@ -27,9 +43,12 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+*.swp
+*.swo
+
+# Banco de dados local SQLite
+*miopia_local.db
 
 # NUNCA ignorar os modelos e artefatos de IA necessários para o deploy
 !backend/models/
 !backend/models/*
-
-*miopia_local.db
