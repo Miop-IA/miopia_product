@@ -1,35 +1,59 @@
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import relationship
+from api.database import Base
 
-class NewsRequest(BaseModel):
-    url: str = Field(default="", description="URL de origem da notícia")
-    text: str = Field(..., min_length=1, max_length=500_000, description="Texto da notícia a ser analisada")
 
-class StylometricFeatures(BaseModel):
-    url: str
-    texto_normalizado: str
-    trunc_pausality: float = Field(..., description="Pausalidade: pontuação por sentença")
-    trunc_emotiveness: float = Field(..., description="Índice de emotividade (adj + adv) / (noun + verb)")
-    trunc_upper_case_density: float = Field(..., description="Densidade de palavras em caixa alta")
-    trunc_verb_density: float = Field(..., description="Densidade de verbos")
-    trunc_noun_density: float = Field(..., description="Densidade de substantivos")
-    trunc_adj_density: float = Field(..., description="Densidade de adjetivos")
-    trunc_adv_density: float = Field(..., description="Densidade de advérbios")
-    trunc_pron_density: float = Field(..., description="Densidade de pronomes")
-    link_density: float = Field(..., description="Densidade de links")
-    rc_spelling_errors: float = Field(..., description="Taxa de possíveis erros ortográficos")
-    rc_modal_verbs_density: float = Field(..., description="Densidade de verbos modais")
-    rc_subj_imp_verbs_density: float = Field(..., description="Densidade de verbos no subjuntivo/imperativo")
-    rc_pron_1_2_sing_density: float = Field(..., description="Densidade de pronomes de 1ª/2ª pessoa do singular")
-    rc_pron_1_plur_density: float = Field(..., description="Densidade de pronomes de 1ª pessoa do plural")
 
-class NewsResponse(BaseModel):
-    success: bool
-    texto_original: str = Field(..., description="Texto completo recebido da página")
-    texto_truncado: str = Field(..., description="Texto normalizado e truncado (até 500 tokens)")
-    total_caracteres_original: int
-    total_palavras_original: int
-    total_palavras_truncado: int
-    features: StylometricFeatures
-    prediction: Optional[Dict[str, Any]] = Field(default=None, description="Resultado do modelo classificador")
-    message: Optional[str] = None
+class Noticia(Base):
+    __tablename__ = "noticias"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    hash_texto = Column(String(64), unique=True, index=True, nullable=False)
+    url = Column(String(500), nullable=True)
+    texto = Column(Text, nullable=False)
+    
+    # Métricas preditivas
+    prob_suspeita = Column(Float, nullable=False)
+    faixa = Column(String(30), nullable=False)
+    modelo_f1 = Column(Float, default=0.961)
+
+    # 15 Características Estilométricas (com MATTR-25 em trunc_diversity)
+    trunc_pausality = Column(Float, nullable=False)
+    trunc_emotiveness = Column(Float, nullable=False)
+    trunc_diversity = Column(Float, nullable=False)
+    trunc_upper_case_density = Column(Float, nullable=False)
+    trunc_verb_density = Column(Float, nullable=False)
+    trunc_noun_density = Column(Float, nullable=False)
+    trunc_adj_density = Column(Float, nullable=False)
+    trunc_adv_density = Column(Float, nullable=False)
+    trunc_pron_density = Column(Float, nullable=False)
+    link_density = Column(Float, nullable=False)
+    rc_spelling_errors = Column(Float, nullable=False)
+    rc_modal_verbs_density = Column(Float, nullable=False)
+    rc_subj_imp_verbs_density = Column(Float, nullable=False)
+    rc_pron_1_2_sing_density = Column(Float, nullable=False)
+    rc_pron_1_plur_density = Column(Float, nullable=False)
+
+    criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Relacionamento com as avaliações da comunidade
+    avaliacoes = relationship("Avaliacao", back_populates="noticia", cascade="all, delete-orphan")
+
+
+class Avaliacao(Base):
+    __tablename__ = "avaliacoes"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    noticia_id = Column(Integer, ForeignKey("noticias.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(String(100), nullable=False, index=True)
+    
+    # 0 = Verdadeiro, 1 = Duvidoso, 2 = Falso
+    avaliacao = Column(Integer, nullable=False)
+    criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    noticia = relationship("Noticia", back_populates="avaliacoes")
+
+    __table_args__ = (
+        UniqueConstraint("noticia_id", "client_id", name="uq_noticia_cliente"),
+    )
