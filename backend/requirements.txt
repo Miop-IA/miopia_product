@@ -9,14 +9,14 @@ psycopg2-binary>=2.9.9
 alembic==1.13.3
 
 # Machine Learning, Inferência e Serialização
-scikit-learn==1.5.2
+scikit-learn==1.9.1
 xgboost==2.1.1
 joblib==1.4.2
-numpy>=1.26.4,<2.0.0
+numpy>=2.0.0
 pandas==2.2.3
 
 # Processamento de Linguagem Natural (NLP)
-spacy==3.8.0
+spacy>=3.8.3
 pyspellchecker==0.8.2
 nltk==3.9.1
 

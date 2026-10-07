@@ -57,6 +57,7 @@ document.getElementById("btnRead").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url: tab.url || "",
+        texto: rawText,
         text: rawText
       })
     });
@@ -69,10 +70,21 @@ document.getElementById("btnRead").addEventListener("click", async () => {
     const data = await res.json();
 
     // 1. Exibe o texto truncado processado pelo backend
-    outputTruncated.innerText = `[Tokens/Palavras no modelo: ${data.total_palavras_truncado}]\n\n${data.texto_truncado}`;
+    const textoTruncado = data.texto_truncado || rawText;
+    const totalPalavras = data.total_palavras_truncado || (textoTruncado ? textoTruncado.trim().split(/\s+/).length : 0);
+    outputTruncated.innerText = `[Tokens/Palavras no modelo: ${totalPalavras}]\n\n${textoTruncado}`;
 
-    // 2. Exibe o vetor de features extraídas
-    outputFeatures.innerText = JSON.stringify(data.features, null, 2);
+    // 2. Exibe o diagnóstico e as features extraídas
+    const featuresDict = data.features || data.metricas || {};
+    const resultadoExibicao = {
+      ...(data.faixa ? {
+        faixa: data.faixa,
+        prob_suspeita: data.prob_suspeita,
+        orientacao: data.orientacao
+      } : {}),
+      features: featuresDict
+    };
+    outputFeatures.innerText = JSON.stringify(resultadoExibicao, null, 2);
 
     statusDiv.style.color = "#137333";
     statusDiv.innerText = "✅ Texto extraído, truncado e analisado com sucesso!";
