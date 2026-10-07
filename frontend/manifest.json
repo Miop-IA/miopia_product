@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Miop.IA - Análise de Notícias",
+  "version": "2.0.0",
+  "description": "Analisa características de desinformação em notícias online e promove pensamento crítico.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Miop.IA"
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/readability.js", "src/content.js"]
+    }
+  ],
+  "icons": {
+    "16": "src/assets/logo.svg",
+    "48": "src/assets/logo.svg",
+    "128": "src/assets/logo.svg"
+  }
+}
