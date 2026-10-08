@@ -140,18 +140,21 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
             metricas=metricas_dto,
             avaliacoes_comunidade=avaliacoes,
             features=metricas_dto.model_dump(),
-            texto_truncado=noticia_existente.texto,
-            total_palavras_truncado=len(noticia_existente.texto.split()) if noticia_existente.texto else 0,
+            texto_truncado=noticia_existente.texto_truncado or noticia_existente.texto,
+            total_palavras_truncado=len((noticia_existente.texto_truncado or noticia_existente.texto).split()) if (noticia_existente.texto_truncado or noticia_existente.texto) else 0,
         )
 
     # 2. Processamento de texto inédito
     features, textos = extrair_pacote_analise(texto_puro, num_links_param=payload.num_links)
     prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
 
+    texto_trunc = textos.get("texto_cru", texto_puro)
+
     nova_noticia = Noticia(
         url=payload.url,
         hash_texto=hash_txt,
         texto=normalizar_texto(texto_puro),
+        texto_truncado=texto_trunc,
         prob_suspeita=prob_suspeita,
         faixa=faixa,
         modelo_f1=f1_score,

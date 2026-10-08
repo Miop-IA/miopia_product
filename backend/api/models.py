@@ -12,6 +12,7 @@ class Noticia(Base):
     hash_texto = Column(String(64), index=True, nullable=False)
     url = Column(String(500), nullable=True)
     texto = Column(Text, nullable=False)
+    texto_truncado = Column(Text, nullable=True)
     
     model_version = Column(String(50), nullable=False, default="unknown")
     pipeline_version = Column(String(50), nullable=False, default="unknown")

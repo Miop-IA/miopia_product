@@ -164,3 +164,28 @@ def test_cache_invalidation_by_version(monkeypatch):
 
     # Como a versão mudou, a API deve ter processado como texto inédito e gerado novo registro
     assert id3 != id1
+
+def test_texto_truncado_no_cache():
+    """Garante que a resposta em cache preserve o texto truncado e não retorne o texto completo."""
+    # Texto com mais de 500 palavras para forçar truncamento.
+    texto_longo = " ".join([f"palavra{i}" for i in range(600)])
+    
+    # 1. Primeira requisição
+    resp1 = client.post("/analisar", json={"texto": texto_longo})
+    assert resp1.status_code == 200
+    dados1 = resp1.json()
+    texto_truncado_1 = dados1["texto_truncado"]
+    total_palavras_1 = dados1["total_palavras_truncado"]
+    
+    assert total_palavras_1 == 500
+    assert "palavra499" in texto_truncado_1
+    assert "palavra500" not in texto_truncado_1
+    
+    # 2. Segunda requisição (cache hit)
+    resp2 = client.post("/analisar", json={"texto": texto_longo})
+    assert resp2.status_code == 200
+    dados2 = resp2.json()
+    
+    assert dados2["id"] == dados1["id"] # garante que é do cache
+    assert dados2["texto_truncado"] == texto_truncado_1
+    assert dados2["total_palavras_truncado"] == total_palavras_1
