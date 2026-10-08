@@ -135,4 +135,70 @@ def test_pos_regras_ambiguas():
     # Se 'poder' fosse contato como verbo modal, teríamos > 1. Aqui deve ser exatamente 1 modal (posso) para 14 palavras.
     # 1 / 14 = 0.0714
     assert round(features["rc_modal_verbs_density"], 2) == 0.07
+
+
+def test_feature_order():
+    """Garante que a extração de features retorna exatamente a mesma ordem do contrato."""
+    from api.feature_contract import ESTILO_FEATURE_NAMES
+    texto = "Um texto normal apenas para testar a ordem das colunas e garantir que o xgboost receba tudo certo."
+    features, _ = extrair_pacote_analise(texto)
+    
+    # Ordem exata
+    assert list(features.keys()) == ESTILO_FEATURE_NAMES
+    # Contagem exata
+    assert len(features) == len(ESTILO_FEATURE_NAMES)
+
+
+def test_modelo_ausente_fallback(monkeypatch):
+    """Garante que o backend crie um baseline local em memória caso o .joblib falhe ou não exista."""
+    import os
+    from api.inferencia import _stacking_bundle, carregar_bundle_stacking
+    import api.inferencia
+    
+    # Zera cache e simula arquivo inexistente
+    api.inferencia._stacking_bundle = None
+    monkeypatch.setattr(os.path, "exists", lambda path: False)
+    
+    bundle = carregar_bundle_stacking()
+    assert bundle is not None
+    assert "tfidf_char" in bundle
+    assert "xgb_denso" in bundle
+    assert bundle["f1_score"] == 0.961
+    assert bundle["limiar"] == 0.46
+
+
+def test_dimensoes_incompativeis(monkeypatch):
+    """Valida como o sistema reage se o XGBoost ou MetaModel receber tamanho errado."""
+    from api.inferencia import predizer_risco_stacking, carregar_bundle_stacking
+    import numpy as np
+
+    texto = "Outro texto de teste para forçar incompatibilidade de dimensões." * 10
+    features, textos = extrair_pacote_analise(texto)
+
+    # Injeta um dicionário de features incompleto intencionalmente
+    features_incompletas = {k: v for i, (k, v) in enumerate(features.items()) if i < 10}
+    
+    with pytest.raises(KeyError):
+        # A montagem do vetor no predizer_risco_stacking exige todas as chaves
+        predizer_risco_stacking(features_incompletas, textos)
+
+
+def test_classes_e_threshold():
+    """Valida os edge cases de threshold 0.46 e distâncias."""
+    from api.inferencia import classificar_faixa_e_orientacao
+    
+    # Limiar padrão = 0.46
+    # Confiavel < 0.31
+    # Atencao <= 0.61
+    # Suspeita > 0.61
+    
+    assert classificar_faixa_e_orientacao(0.10, limiar=0.46)[0] == "Confiavel"
+    assert classificar_faixa_e_orientacao(0.30, limiar=0.46)[0] == "Confiavel"
+    
+    assert classificar_faixa_e_orientacao(0.32, limiar=0.46)[0] == "Atencao"
+    assert classificar_faixa_e_orientacao(0.46, limiar=0.46)[0] == "Atencao"
+    assert classificar_faixa_e_orientacao(0.61, limiar=0.46)[0] == "Atencao"
+    
+    assert classificar_faixa_e_orientacao(0.62, limiar=0.46)[0] == "Suspeita"
+    assert classificar_faixa_e_orientacao(0.99, limiar=0.46)[0] == "Suspeita"
 
