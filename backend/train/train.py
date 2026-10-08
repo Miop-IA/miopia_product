@@ -13,6 +13,7 @@ from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, f1_score
+from sklearn.model_selection import GroupShuffleSplit, GroupKFold
 from xgboost import XGBClassifier
 
 # Configuração de logging
@@ -71,103 +72,117 @@ def treinar_stacking(
     output_path: str = None
 ) -> Dict:
     """
-    Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística.
+    Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística
+    usando previsões Out-of-Fold (OOF) baseadas no GroupKFold por id_noticia.
     """
     logger.info("A iniciar treino do pipeline Stacking Parte C...")
-
     y_train = df_treino["target"].values
+    groups_train = df_treino["id_noticia"].values
 
     # -------------------------------------------------------------
-    # 1. Ramo SVM Caracteres (TF-IDF de n-gramas 3 a 5 no texto cru)
+    # 0. Geração de Predições Out-of-Fold (OOF)
     # -------------------------------------------------------------
-    logger.info("A treinar TF-IDF de Caracteres (3 a 5) + LinearSVC...")
-    tfidf_char = TfidfVectorizer(
-        analyzer="char",
-        ngram_range=(3, 5),
-        min_df=5,
-        max_features=50000,
-        sublinear_tf=True
-    )
-    X_char_train = tfidf_char.fit_transform(df_treino["texto_cru"])
+    logger.info("Gerando predições OOF com GroupKFold (5 splits)...")
+    gkf = GroupKFold(n_splits=5)
     
+    p_char_oof = np.zeros(len(df_treino))
+    p_word_oof = np.zeros(len(df_treino))
+    p_denso_oof = np.zeros(len(df_treino))
+
+    for fold, (train_idx, val_idx) in enumerate(gkf.split(df_treino, y_train, groups=groups_train)):
+        logger.info(f"Processando fold {fold + 1}/5...")
+        df_fold_train = df_treino.iloc[train_idx]
+        df_fold_val = df_treino.iloc[val_idx]
+        y_fold_train = y_train[train_idx]
+        
+        # Char
+        tfidf_char_fold = TfidfVectorizer(analyzer="char", ngram_range=(3, 5), min_df=5, max_features=50000, sublinear_tf=True)
+        X_char_fold_train = tfidf_char_fold.fit_transform(df_fold_train["texto_cru"])
+        X_char_fold_val = tfidf_char_fold.transform(df_fold_val["texto_cru"])
+        svm_char_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=3)
+        svm_char_fold.fit(X_char_fold_train, y_fold_train)
+        p_char_oof[val_idx] = svm_char_fold.predict_proba(X_char_fold_val)[:, 1]
+        
+        # Word
+        tfidf_word_fold = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=30000, sublinear_tf=True)
+        X_word_fold_train = tfidf_word_fold.fit_transform(df_fold_train["texto_limpo"])
+        X_word_fold_val = tfidf_word_fold.transform(df_fold_val["texto_limpo"])
+        svm_word_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=3)
+        svm_word_fold.fit(X_word_fold_train, y_fold_train)
+        p_word_oof[val_idx] = svm_word_fold.predict_proba(X_word_fold_val)[:, 1]
+        
+        # Denso
+        tfidf_lemmas_fold = TfidfVectorizer(max_features=10000, min_df=3)
+        X_lemmas_fold_train = tfidf_lemmas_fold.fit_transform(df_fold_train["texto_lematizado"])
+        X_lemmas_fold_val = tfidf_lemmas_fold.transform(df_fold_val["texto_lematizado"])
+        
+        lda_8_fold = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_fold_train)
+        nmf_8_fold = NMF(n_components=8, random_state=42, max_iter=200).fit(X_lemmas_fold_train)
+        lda_30_fold = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_fold_train)
+        nmf_30_fold = NMF(n_components=30, random_state=42, max_iter=200).fit(X_lemmas_fold_train)
+        
+        X_denso_fold_train = np.hstack([
+            df_fold_train[ESTILO_FEATURE_NAMES].values,
+            extrair_vetor_k_mais_3(lda_8_fold, X_lemmas_fold_train),
+            extrair_vetor_k_mais_3(nmf_8_fold, X_lemmas_fold_train),
+            extrair_vetor_k_mais_3(lda_30_fold, X_lemmas_fold_train),
+            extrair_vetor_k_mais_3(nmf_30_fold, X_lemmas_fold_train)
+        ])
+        
+        xgb_fold = XGBClassifier(n_estimators=150, max_depth=4, learning_rate=0.08, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1)
+        xgb_fold.fit(X_denso_fold_train, y_fold_train)
+        
+        X_denso_fold_val = np.hstack([
+            df_fold_val[ESTILO_FEATURE_NAMES].values,
+            extrair_vetor_k_mais_3(lda_8_fold, X_lemmas_fold_val),
+            extrair_vetor_k_mais_3(nmf_8_fold, X_lemmas_fold_val),
+            extrair_vetor_k_mais_3(lda_30_fold, X_lemmas_fold_val),
+            extrair_vetor_k_mais_3(nmf_30_fold, X_lemmas_fold_val)
+        ])
+        p_denso_oof[val_idx] = xgb_fold.predict_proba(X_denso_fold_val)[:, 1]
+
+    # -------------------------------------------------------------
+    # 1. Treinamento Final dos Modelos-Base em Todo o Conjunto
+    # -------------------------------------------------------------
+    logger.info("Treinando modelos-base finais em todo o conjunto de desenvolvimento...")
+    tfidf_char = TfidfVectorizer(analyzer="char", ngram_range=(3, 5), min_df=5, max_features=50000, sublinear_tf=True)
+    X_char_train = tfidf_char.fit_transform(df_treino["texto_cru"])
     base_svm_char = LinearSVC(C=1.0, random_state=42, max_iter=2000)
     svm_char = CalibratedClassifierCV(estimator=base_svm_char, cv=3)
     svm_char.fit(X_char_train, y_train)
 
-    # -------------------------------------------------------------
-    # 2. Ramo SVM Palavras (TF-IDF de 1 e 2 gramas no texto limpo)
-    # -------------------------------------------------------------
-    logger.info("A treinar TF-IDF de Palavras (1 e 2 gramas) + LinearSVC...")
-    tfidf_word = TfidfVectorizer(
-        ngram_range=(1, 2),
-        min_df=3,
-        max_features=30000,
-        sublinear_tf=True
-    )
+    tfidf_word = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=30000, sublinear_tf=True)
     X_word_train = tfidf_word.fit_transform(df_treino["texto_limpo"])
-
     base_svm_word = LinearSVC(C=1.0, random_state=42, max_iter=2000)
     svm_word = CalibratedClassifierCV(estimator=base_svm_word, cv=3)
     svm_word.fit(X_word_train, y_train)
 
-    # -------------------------------------------------------------
-    # 3. Modelos Temáticos: LDA e NMF (k=8 e k=30) no texto lematizado
-    # -------------------------------------------------------------
-    logger.info("A ajustar modelos temáticos não supervisionados (LDA e NMF com k=8 e k=30)...")
     tfidf_lemmas = TfidfVectorizer(max_features=10000, min_df=3)
     X_lemmas_train = tfidf_lemmas.fit_transform(df_treino["texto_lematizado"])
+    
+    lda_8 = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_train)
+    nmf_8 = NMF(n_components=8, random_state=42, max_iter=200).fit(X_lemmas_train)
+    lda_30 = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_train)
+    nmf_30 = NMF(n_components=30, random_state=42, max_iter=200).fit(X_lemmas_train)
 
-    # Modelos com k=8
-    lda_8 = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1)
-    lda_8.fit(X_lemmas_train)
-
-    nmf_8 = NMF(n_components=8, random_state=42, max_iter=200)
-    nmf_8.fit(X_lemmas_train)
-
-    # Modelos com k=30
-    lda_30 = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1)
-    lda_30.fit(X_lemmas_train)
-
-    nmf_30 = NMF(n_components=30, random_state=42, max_iter=200)
-    nmf_30.fit(X_lemmas_train)
-
-    v_lda8 = extrair_vetor_k_mais_3(lda_8, X_lemmas_train)
-    v_nmf8 = extrair_vetor_k_mais_3(nmf_8, X_lemmas_train)
-    v_lda30 = extrair_vetor_k_mais_3(lda_30, X_lemmas_train)
-    v_nmf30 = extrair_vetor_k_mais_3(nmf_30, X_lemmas_train)
-
-    # -------------------------------------------------------------
-    # 4. Ramo XGBoost Denso: Estilo (15 features) + Temas (k=8 e k=30)
-    # -------------------------------------------------------------
-    logger.info("A treinar XGBoost Denso (Estilo + Temas)...")
-    X_estilo = df_treino[ESTILO_FEATURE_NAMES].values
-    X_denso_train = np.hstack([X_estilo, v_lda8, v_nmf8, v_lda30, v_nmf30])
-
-    xgb_denso = XGBClassifier(
-        n_estimators=150,
-        max_depth=4,
-        learning_rate=0.08,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        eval_metric="logloss",
-        random_state=42,
-        n_jobs=-1
-    )
+    X_denso_train = np.hstack([
+        df_treino[ESTILO_FEATURE_NAMES].values,
+        extrair_vetor_k_mais_3(lda_8, X_lemmas_train),
+        extrair_vetor_k_mais_3(nmf_8, X_lemmas_train),
+        extrair_vetor_k_mais_3(lda_30, X_lemmas_train),
+        extrair_vetor_k_mais_3(nmf_30, X_lemmas_train)
+    ])
+    
+    xgb_denso = XGBClassifier(n_estimators=150, max_depth=4, learning_rate=0.08, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1)
     xgb_denso.fit(X_denso_train, y_train)
 
     # -------------------------------------------------------------
-    # 5. Meta-Modelo: Regressão Logística
+    # 2. Meta-Modelo (Treinado Estritamente com OOF)
     # -------------------------------------------------------------
-    logger.info("A ajustar Meta-Modelo de Regressão Logística...")
-    p_char = svm_char.predict_proba(X_char_train)[:, 1].reshape(-1, 1)
-    p_word = svm_word.predict_proba(X_word_train)[:, 1].reshape(-1, 1)
-    p_denso = xgb_denso.predict_proba(X_denso_train)[:, 1].reshape(-1, 1)
-
-    X_meta_train = np.hstack([p_char, p_word, p_denso])
-
+    logger.info("A ajustar Meta-Modelo de Regressão Logística sobre previsões OOF...")
+    X_meta_train = np.hstack([p_char_oof.reshape(-1, 1), p_word_oof.reshape(-1, 1), p_denso_oof.reshape(-1, 1)])
     meta_lr = LogisticRegression(C=1.0, solver="lbfgs", random_state=42)
     meta_lr.fit(X_meta_train, y_train)
-
     logger.info(f"Pesos do Meta-Modelo (Char, Word, Denso): {meta_lr.coef_[0]}")
 
     # -------------------------------------------------------------
@@ -284,7 +299,18 @@ if __name__ == "__main__":
     if os.path.exists(caminho_11) and os.path.exists(caminho_master):
         logger.info(f"A carregar bases reais: {caminho_11} e {caminho_master}")
         df_completo = carregar_dados_reais(caminho_11, caminho_master)
-        treinar_stacking(df_completo, output_path=target_joblib)
+        
+        # Divisão com GroupShuffleSplit para que pares da mesma id_noticia não se separem
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        train_idx, test_idx = next(gss.split(df_completo, groups=df_completo["id_noticia"]))
+        
+        df_treino = df_completo.iloc[train_idx]
+        df_teste = df_completo.iloc[test_idx]
+        
+        logger.info(f"Grupos no Treino: {df_treino['id_noticia'].nunique()} | Tamanho: {len(df_treino)}")
+        logger.info(f"Grupos no Teste Reservado: {df_teste['id_noticia'].nunique()} | Tamanho: {len(df_teste)}")
+        
+        treinar_stacking(df_treino=df_treino, df_val=df_teste, output_path=target_joblib)
     else:
         erro_msg = f"Bases reais não encontradas: {caminho_11} ou {caminho_master}"
         logger.error(erro_msg)
