@@ -33,7 +33,12 @@ def carregar_bundle_stacking():
             _stacking_bundle = joblib.load(model_path)
             
             # Validação do Bundle Incompleto
-            required_keys = ["tfidf_char", "svm_caracteres", "tfidf_word", "svm_palavras", "xgb_denso", "meta_modelo", "limiar", "f1_score"]
+            required_keys = [
+                "tfidf_char", "svm_caracteres", 
+                "tfidf_word", "svm_palavras", 
+                "tfidf_lemmas", "lda_8", "nmf_8", "lda_30", "nmf_30", 
+                "scaler_estilo", "xgb_denso", "meta_modelo", "limiar", "f1_score"
+            ]
             for k in required_keys:
                 if k not in _stacking_bundle:
                     raise RuntimeError(f"Bundle corrompido: chave obrigatória '{k}' ausente.")
@@ -73,22 +78,19 @@ def carregar_bundle_stacking():
 
 def extrair_features_topicos(texto_lematizado: str, bundle: Dict[str, Any]) -> np.ndarray:
     """Extrai features temáticas contínuas (k+3: distribuição soft, entropia, theta_max, ajuste)."""
-    if "lda_8" in bundle and "nmf_8" in bundle and "lda_30" in bundle and "nmf_30" in bundle and "tfidf_lemmas" in bundle:
-        vec_lemmas = bundle["tfidf_lemmas"].transform([texto_lematizado])
-        vecs = []
-        for model in [bundle["lda_8"], bundle["nmf_8"], bundle["lda_30"], bundle["nmf_30"]]:
-            theta = model.transform(vec_lemmas)[0]
-            soma = float(np.sum(theta))
-            theta_norm = theta / soma if soma > 0 else theta
-            eps = 1e-9
-            theta_safe = np.clip(theta_norm, eps, 1.0)
-            entropia = float(scipy.stats.entropy(theta_safe))
-            theta_max = float(np.max(theta_norm))
-            ajuste = float(soma)
-            vecs.extend(list(theta_norm) + [entropia, theta_max, ajuste])
-        return np.array(vecs, dtype=np.float32)
-
-    return np.zeros(40, dtype=np.float32)
+    vec_lemmas = bundle["tfidf_lemmas"].transform([texto_lematizado])
+    vecs = []
+    for model in [bundle["lda_8"], bundle["nmf_8"], bundle["lda_30"], bundle["nmf_30"]]:
+        theta = model.transform(vec_lemmas)[0]
+        soma = float(np.sum(theta))
+        theta_norm = theta / soma if soma > 0 else theta
+        eps = 1e-9
+        theta_safe = np.clip(theta_norm, eps, 1.0)
+        entropia = float(scipy.stats.entropy(theta_safe))
+        theta_max = float(np.max(theta_norm))
+        ajuste = float(soma)
+        vecs.extend(list(theta_norm) + [entropia, theta_max, ajuste])
+    return np.array(vecs, dtype=np.float32)
 
 
 def classificar_faixa_e_orientacao(prob_fake: float, limiar: float, f1_score: float = None) -> Tuple[str, str]:
@@ -143,11 +145,8 @@ def predizer_risco_stacking(
 
     # 3. Ramo XGBoost Denso
     vetor_estilo_raw = [features_estilo[f] for f in ESTILO_FEATURE_NAMES]
-    scaler_estilo = bundle.get("scaler_estilo")
-    if scaler_estilo is not None:
-        vetor_estilo = scaler_estilo.transform([vetor_estilo_raw])[0]
-    else:
-        vetor_estilo = vetor_estilo_raw
+    scaler_estilo = bundle["scaler_estilo"]
+    vetor_estilo = scaler_estilo.transform([vetor_estilo_raw])[0]
         
     vetor_temas = extrair_features_topicos(textos["texto_lematizado"], bundle)
     X_denso = np.concatenate([vetor_estilo, vetor_temas]).reshape(1, -1)
