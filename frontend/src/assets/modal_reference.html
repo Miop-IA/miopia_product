@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Miop.IA — Referência de modal (extraída de design.png)</title>
+<style>
+  :root {
+    --cor-fundo-pagina: #E5E5E5;
+    --cor-fundo-card: #FFFFFF;
+    --cor-fundo-secao: #F6F7F9;
+    --cor-texto-titulo: #16171D;
+    --cor-texto-corpo: #6B6F80;
+    --cor-logo-laranja: #F2600A;
+    --cor-logo-azul: #012252;
+    --cor-destaque: #FF0047;
+    --cor-bullet-pense: #4E00E8;
+    --cor-verdadeira: #00855E;
+    --cor-duvidosa: #BC7B1B;
+    --cor-falsa: #D20029;
+    --cor-borda-caixa: #E3E5EA;
+    --cor-borda-pill-cinza: #24252B;
+    --cor-badge-fundo: #D5D7DC;
+    --cor-enviar: #1565D8;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--cor-fundo-pagina);
+    display: flex;
+    justify-content: center;
+    padding: 48px 16px;
+    margin: 0;
+  }
+
+  .modal {
+    width: 460px;
+    background: var(--cor-fundo-card);
+    border-radius: 18px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+    padding: 22px;
+    perspective: 1400px;
+  }
+
+  /* ---------- cabeçalho (comum às duas telas) ---------- */
+  .cabecalho {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+  }
+  .logo { display: flex; align-items: center; font-weight: 800; font-size: 20px; }
+  .logo .miop { color: var(--cor-logo-laranja); }
+  .logo .ia { color: var(--cor-logo-azul); }
+  .badge-site {
+    background: var(--cor-badge-fundo);
+    color: #5B5D66;
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 999px;
+  }
+
+  label.rotulo {
+    display: block;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--cor-texto-corpo);
+    margin-bottom: 8px;
+  }
+
+  /* ---------- bloco ENTENDA ---------- */
+  .bloco-entenda {
+    background: var(--cor-fundo-secao);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .bloco-entenda h2 {
+    font-size: 18px;
+    color: var(--cor-texto-titulo);
+    margin: 0 0 10px 0;
+    line-height: 1.3;
+  }
+  .bloco-entenda p.corpo {
+    font-size: 14px;
+    color: var(--cor-texto-corpo);
+    line-height: 1.6;
+    margin: 0 0 14px 0;
+  }
+  .bloco-entenda p.corpo mark {
+    background: none;
+    color: var(--cor-destaque);
+    font-weight: 700;
+  }
+  hr.divisor { border: none; border-top: 1px solid #E9EAEE; margin: 14px 0; }
+
+  .destaques-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .pill {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: center;
+    border: 1.5px solid transparent;
+  }
+  .pill-destaque { border-color: var(--cor-destaque); color: var(--cor-destaque); background: #FFFFFF; }
+  .pill-categoria { border-color: var(--cor-borda-pill-cinza); color: var(--cor-texto-titulo); background: #FFFFFF; }
+
+  .pense { margin-top: 16px; }
+  .pense ul { list-style: none; padding: 0; margin: 8px 0 0 0; }
+  .pense li {
+    position: relative;
+    padding-left: 16px;
+    font-size: 13.5px;
+    color: var(--cor-texto-corpo);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+  .pense li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 6px;
+    width: 7px; height: 7px;
+    background: var(--cor-bullet-pense);
+  }
+
+  /* ---------- bloco ANTES DE COMPARTILHAR ---------- */
+  .bloco-antes {
+    border: 1px solid var(--cor-borda-caixa);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  .bloco-antes p { font-size: 13.5px; color: var(--cor-texto-corpo); line-height: 1.6; margin: 0; }
+
+  /* ---------- bloco SUA AVALIAÇÃO ---------- */
+  .pergunta-avaliacao { font-size: 15px; color: var(--cor-texto-titulo); font-weight: 600; margin: 0 0 12px 0; }
+
+  .botoes-avaliacao { display: flex; gap: 10px; }
+  .botao-rating {
+    flex: 1;
+    padding: 12px 8px;
+    border-radius: 999px;
+    background: #FFFFFF;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .botao-rating[data-valor="verdadeira"] { border: 2px solid var(--cor-verdadeira); color: var(--cor-verdadeira); }
+  .botao-rating[data-valor="duvidosa"]  { border: 2px solid var(--cor-duvidosa);  color: var(--cor-duvidosa); }
+  .botao-rating[data-valor="falsa"]     { border: 2px solid var(--cor-falsa);     color: var(--cor-falsa); }
+
+  .botao-rating.selecionado[data-valor="verdadeira"] { background: var(--cor-verdadeira); color: #fff; }
+  .botao-rating.selecionado[data-valor="duvidosa"]  { background: var(--cor-duvidosa);  color: #fff; }
+  .botao-rating.selecionado[data-valor="falsa"]     { background: var(--cor-falsa);     color: #fff; }
+
+  .botao-enviar {
+    display: block;
+    margin: 16px auto 0 auto;
+    background: var(--cor-enviar);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 11px 32px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .botao-enviar[hidden] { display: none; }
+
+  /* ---------- bloco OBRIGADA (estado pós-envio) ---------- */
+  .bloco-obrigada {
+    background: var(--cor-fundo-secao);
+    border-radius: 12px;
+    padding: 18px;
+    margin-top: 14px;
+  }
+  .bloco-obrigada p { font-size: 13.5px; color: var(--cor-texto-corpo); line-height: 1.6; margin: 0; }
+
+  /* ---------- transição "girar" entre os dois estados ---------- */
+  .conteudo-analise, .tela-pos-envio {
+    transition: transform 0.5s ease, opacity 0.4s ease;
+    transform-style: preserve-3d;
+  }
+  .modal.enviado .conteudo-analise {
+    display: none;
+  }
+  .girando .conteudo-analise { transform: rotateY(90deg); opacity: 0; }
+  .girando .tela-pos-envio { transform: rotateY(0deg); }
+  .tela-pos-envio[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<div class="modal" id="modal">
+
+  <div class="cabecalho">
+    <div class="logo"><span class="miop">Miop</span><span class="ia">.IA</span></div>
+    <div class="badge-site" id="badge-site">g1.globo.com</div>
+  </div>
+
+  <!-- ESTADO 1 — análise completa (some inteiro após o envio) -->
+  <div class="conteudo-analise" id="conteudo-analise">
+
+    <div class="bloco-entenda">
+      <label class="rotulo">Entenda</label>
+      <h2>Estudo aponta relação entre uso de telas e qualidade do sono em adolescentes</h2>
+      <p class="corpo">
+        Pesquisadores acompanharam <mark>mil jovens</mark> por seis meses e relataram
+        mudanças nos padrões de sono. O texto, porém, não detalha a metodologia nem
+        quem financiou o estudo. <mark>Especialistas</mark> pedem cautela antes de
+        <mark>generalizar</mark> os resultados.
+      </p>
+
+      <hr class="divisor">
+
+      <label class="rotulo">O que cada destaque revela</label>
+      <div style="display:flex; gap:24px;">
+        <div class="destaques-grid" style="flex:1;">
+          <span class="pill pill-destaque">mil jovens</span>
+          <span class="pill pill-categoria">Número sem fonte</span>
+          <span class="pill pill-destaque">Especialistas</span>
+          <span class="pill pill-categoria">Fonte vaga</span>
+          <span class="pill pill-destaque">generalizar</span>
+          <span class="pill pill-categoria">Generalização</span>
+        </div>
+        <div class="pense" style="flex:1; margin-top:0;">
+          <label class="rotulo">Pense</label>
+          <ul>
+            <li>Quem publicou isso e o que essa fonte ganha com a sua atenção?</li>
+            <li>A manchete promete mais do que o texto entrega?</li>
+            <li>Onde estão os números — e quem os produziu?</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="bloco-antes">
+      <label class="rotulo">Antes de compartilhar</label>
+      <p>
+        Notícias enganosas raramente inventam fatos. Elas omitem a fonte do número,
+        generalizam uma amostra pequena e transformam coincidência em causa.
+        Compartilhar sem checar espalha o erro mais rápido do que a correção consegue
+        alcançar.
+      </p>
+    </div>
+
+    <label class="rotulo">Sua avaliação</label>
+    <p class="pergunta-avaliacao">O que você acha dessa notícia?</p>
+    <div class="botoes-avaliacao" id="botoes-avaliacao">
+      <button class="botao-rating" data-valor="verdadeira">Verdadeira</button>
+      <button class="botao-rating" data-valor="duvidosa">Duvidosa</button>
+      <button class="botao-rating" data-valor="falsa">Falsa</button>
+    </div>
+    <button class="botao-enviar" id="botao-enviar" hidden>Enviar</button>
+  </div>
+
+  <!-- ESTADO 2 — pós-envio: SÓ aparece depois do clique em Enviar -->
+  <div class="tela-pos-envio" id="tela-pos-envio" hidden>
+    <label class="rotulo">Sua avaliação</label>
+    <p class="pergunta-avaliacao">O que você acha dessa notícia?</p>
+    <div class="botoes-avaliacao" id="botoes-avaliacao-final"></div>
+
+    <div class="bloco-obrigada">
+      <label class="rotulo">Obrigada por avaliar!</label>
+      <p>
+        Cada análise sua contribui para um consumo de notícias mais atento, ajuda a
+        frear a desinformação e fortalece o hábito de checar antes de compartilhar.
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ---------------------------------------------------------------
+  // Este script é só a REFERÊNCIA do comportamento. Na extensão real,
+  // trocar os dados fixos abaixo pela resposta da API de análise, e o
+  // envio do fetch() pelo endpoint real de avaliação.
+  // ---------------------------------------------------------------
+  let valorSelecionado = null;
+  const botoes = document.querySelectorAll(".botao-rating");
+  const botaoEnviar = document.getElementById("botao-enviar");
+  const modal = document.getElementById("modal");
+  const conteudoAnalise = document.getElementById("conteudo-analise");
+  const telaPosEnvio = document.getElementById("tela-pos-envio");
+  const botoesFinalContainer = document.getElementById("botoes-avaliacao-final");
+
+  botoes.forEach(botao => {
+    botao.addEventListener("click", () => {
+      botoes.forEach(b => b.classList.remove("selecionado"));
+      botao.classList.add("selecionado");
+      valorSelecionado = botao.dataset.valor;
+      botaoEnviar.hidden = false;
+    });
+  });
+
+  botaoEnviar.addEventListener("click", () => {
+    // Monta o estado final (mesmos 3 botões, só o selecionado preenchido)
+    botoesFinalContainer.innerHTML = "";
+    ["verdadeira", "duvidosa", "falsa"].forEach(valor => {
+      const b = document.createElement("button");
+      b.className = "botao-rating" + (valor === valorSelecionado ? " selecionado" : "");
+      b.dataset.valor = valor;
+      b.disabled = true;
+      b.textContent = valor.charAt(0).toUpperCase() + valor.slice(1);
+      botoesFinalContainer.appendChild(b);
+    });
+
+    // Transição "girando"
+    modal.classList.add("girando");
+    setTimeout(() => {
+      conteudoAnalise.style.display = "none";
+      telaPosEnvio.hidden = false;
+      modal.classList.remove("girando");
+    }, 320);
+
+    // Exemplo do payload que iria pro backend -- ver DESIGN_TOKENS/PRD
+    // para o contrato de dados completo.
+    console.log("Enviar para API:", {
+      avaliacao: valorSelecionado,
+      site: document.getElementById("badge-site").textContent,
+      timestamp: new Date().toISOString(),
+    });
+  });
+</script>
+
+</body>
+</html>
