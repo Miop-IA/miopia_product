@@ -20,7 +20,12 @@ from api.schemas import (
 )
 from api.filtro import normalizar_texto, gerar_hash_texto, validar_viabilidade_analise
 from api.feature_extraction import extrair_pacote_analise
-from api.inferencia import predizer_risco_stacking, classificar_faixa_e_orientacao
+from api.inferencia import (
+    carregar_bundle_stacking,
+    classificar_faixa_e_orientacao,
+    predizer_risco_stacking,
+)
+from api.bundle_spec import ModeloInvalidoError, resumo_bundle
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("miopia_api")
@@ -108,6 +113,17 @@ def obter_contagem_avaliacoes(db: Session, noticia_id: int) -> ContagemAvaliacoe
     )
 
 
+def obter_bundle_ou_503():
+    try:
+        return carregar_bundle_stacking()
+    except ModeloInvalidoError as e:
+        logger.error(f"Modelo de produção indisponível: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Modelo de classificação indisponível.",
+        )
+
+
 @app.get("/health", tags=["Monitoramento"])
 def health_check():
     """Retorna sucesso caso a API esteja operando."""
@@ -158,6 +174,7 @@ def readiness_check(db: Session = Depends(get_db)):
 @app.post("/analisar", response_model=AnaliseResponse, status_code=status.HTTP_200_OK, tags=["Análise"])
 def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
     texto_puro = payload.texto
+    bundle = obter_bundle_ou_503()
 
     is_valido, motivo, _ = validar_viabilidade_analise(texto_puro)
     if not is_valido:
@@ -213,8 +230,15 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         )
 
     # 2. Processamento de texto inédito
-    features, textos = extrair_pacote_analise(texto_puro, num_links_param=payload.num_links)
-    prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
+    features, textos = extrair_pacote_analise(texto_puro)
+    try:
+        prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
+    except ModeloInvalidoError as e:
+        logger.error(f"Inferência recusada, modelo inválido: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Modelo de classificação indisponível.",
+        )
 
     texto_trunc = textos.get("texto_cru", texto_puro)
 

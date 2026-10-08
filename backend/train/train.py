@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Tuple
 import joblib
 import numpy as np
@@ -21,10 +22,12 @@ from xgboost import XGBClassifier
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("train_stacking")
 
-# 15 características estilométricas definidas via Contrato Oficial Unificado
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from api.feature_contract import ESTILO_FEATURE_NAMES
+# Contrato compartilhado com a API (15 estilo + 88 temas = 103 features)
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+from api.bundle_spec import ESTILO_FEATURE_NAMES, FEATURE_COUNT, FEATURE_ORDER, validar_bundle  # noqa: E402
 
 
 def extrair_vetor_k_mais_3(model, X_text_transformed: np.ndarray) -> np.ndarray:
@@ -56,7 +59,8 @@ def extrair_vetor_k_mais_3(model, X_text_transformed: np.ndarray) -> np.ndarray:
 def treinar_stacking(
     df_treino: pd.DataFrame,
     df_val: pd.DataFrame = None,
-    output_path: str = None
+    output_path: str = None,
+    version: str = None,
 ) -> Dict:
     """
     Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística
@@ -157,23 +161,45 @@ def treinar_stacking(
 
     tfidf_lemmas = TfidfVectorizer(max_features=10000, min_df=3)
     X_lemmas_train = tfidf_lemmas.fit_transform(df_treino["texto_lematizado"])
-    
-    lda_8 = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_train)
-    nmf_8 = NMF(n_components=8, random_state=42, max_iter=200).fit(X_lemmas_train)
-    lda_30 = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_train)
-    nmf_30 = NMF(n_components=30, random_state=42, max_iter=200).fit(X_lemmas_train)
 
-    scaler_estilo = StandardScaler()
-    X_estilo_train = scaler_estilo.fit_transform(df_treino[ESTILO_FEATURE_NAMES].values)
-    X_denso_train = np.hstack([
-        X_estilo_train,
-        extrair_vetor_k_mais_3(lda_8, X_lemmas_train),
-        extrair_vetor_k_mais_3(nmf_8, X_lemmas_train),
-        extrair_vetor_k_mais_3(lda_30, X_lemmas_train),
-        extrair_vetor_k_mais_3(nmf_30, X_lemmas_train)
-    ])
-    
-    xgb_denso = XGBClassifier(n_estimators=150, max_depth=4, learning_rate=0.08, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1)
+    # Modelos com k=8
+    lda_8 = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1)
+    lda_8.fit(X_lemmas_train)
+
+    nmf_8 = NMF(n_components=8, random_state=42, max_iter=200)
+    nmf_8.fit(X_lemmas_train)
+
+    # Modelos com k=30
+    lda_30 = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1)
+    lda_30.fit(X_lemmas_train)
+
+    nmf_30 = NMF(n_components=30, random_state=42, max_iter=200)
+    nmf_30.fit(X_lemmas_train)
+
+    v_lda8 = extrair_vetor_k_mais_3(lda_8, X_lemmas_train)
+    v_nmf8 = extrair_vetor_k_mais_3(nmf_8, X_lemmas_train)
+    v_lda30 = extrair_vetor_k_mais_3(lda_30, X_lemmas_train)
+    v_nmf30 = extrair_vetor_k_mais_3(nmf_30, X_lemmas_train)
+
+    # -------------------------------------------------------------
+    # 4. Ramo XGBoost Denso: Estilo (15 features) + Temas (k=8 e k=30)
+    # -------------------------------------------------------------
+    logger.info("A treinar XGBoost Denso (Estilo + Temas)...")
+    X_estilo = df_treino[ESTILO_FEATURE_NAMES].values
+    X_denso_train = np.hstack([X_estilo, v_lda8, v_nmf8, v_lda30, v_nmf30])
+    if X_denso_train.shape[1] != FEATURE_COUNT:
+        raise ValueError(f"Vetor denso com {X_denso_train.shape[1]} features, contrato exige {FEATURE_COUNT}")
+
+    xgb_denso = XGBClassifier(
+        n_estimators=150,
+        max_depth=4,
+        learning_rate=0.08,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        eval_metric="logloss",
+        random_state=42,
+        n_jobs=-1
+    )
     xgb_denso.fit(X_denso_train, y_train)
 
     # -------------------------------------------------------------
@@ -249,11 +275,15 @@ def treinar_stacking(
         "meta_modelo": meta_lr,
         "limiar": limiar_decisao,
         "f1_score": float(f1_obtido),
-        "n_exemplos_treino": len(df_treino),
-        "n_exemplos_teste": len(df_eval) if df_val is not None else 0,
-        "dataset_version": "fake_br_master + dataset_11",
-        "feature_names_estilo": ESTILO_FEATURE_NAMES,
+        "f1_avaliado_em": "validacao" if df_val is not None else "treino",
+        "feature_names_estilo": list(ESTILO_FEATURE_NAMES),
+        "feature_order": list(FEATURE_ORDER),
+        "feature_count": FEATURE_COUNT,
+        "version": version or datetime.now(timezone.utc).strftime("stacking-%Y%m%dT%H%M%SZ"),
     }
+
+    # O mesmo contrato verificado no startup da API: nunca serializar bundle inválido.
+    validar_bundle(bundle)
 
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -337,30 +367,32 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
 
 
 if __name__ == "__main__":
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    target_joblib = os.path.join(base_dir, "models", "stacking_miopia_v1.joblib")
+    import argparse
 
-    caminho_11 = os.path.join(base_dir, "api", "data", "dataset_11.csv")
-    caminho_master = os.path.join(base_dir, "api", "data", "fake_br_master.csv")
+    parser = argparse.ArgumentParser(description="Treina o bundle Stacking Miop.IA.")
+    parser.add_argument("--dados-dir", default=os.path.join(_BACKEND_DIR, "api", "data"),
+                        help="Pasta com dataset_11.csv e fake_br_master.csv")
+    parser.add_argument("--saida", default=os.path.join(_BACKEND_DIR, "models", "stacking_miopia_0961.joblib"))
+    parser.add_argument("--versao", default=None, help="Identificador de versão gravado no bundle")
+    parser.add_argument("--sintetico", action="store_true",
+                        help="Treina com dados sintéticos (apenas para testes; exige --saida diferente da produção)")
+    args = parser.parse_args()
 
-    if os.path.exists(caminho_11) and os.path.exists(caminho_master):
-        logger.info(f"A carregar bases reais: {caminho_11} e {caminho_master}")
-        df_completo = carregar_dados_reais(caminho_11, caminho_master)
-        
-        # Divisão com GroupShuffleSplit para que pares da mesma id_noticia não se separem
-        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-        train_idx, test_idx = next(gss.split(df_completo, groups=df_completo["id_noticia"]))
-        
-        df_treino = df_completo.iloc[train_idx]
-        df_teste = df_completo.iloc[test_idx]
-        
-        logger.info(f"Grupos no Treino: {df_treino['id_noticia'].nunique()} | Tamanho: {len(df_treino)}")
-        logger.info(f"Grupos no Teste Reservado: {df_teste['id_noticia'].nunique()} | Tamanho: {len(df_teste)}")
-        
-        treinar_stacking(df_treino=df_treino, df_val=df_teste, output_path=target_joblib)
+    saida_producao = os.path.abspath(os.path.join(_BACKEND_DIR, "models", "stacking_miopia_0961.joblib"))
+
+    if args.sintetico:
+        if os.path.abspath(args.saida) == saida_producao:
+            sys.exit("Recusado: bundle sintético não pode sobrescrever o artefato de produção. Use --saida.")
+        logger.warning("Treinando com dados SINTÉTICOS (somente teste).")
+        df_mock = gerar_dados_sinteticos_para_teste(n_samples=80)
+        treinar_stacking(df_mock, output_path=args.saida, version=args.versao or "sintetico-teste")
     else:
-        erro_msg = f"Bases reais não encontradas: {caminho_11} ou {caminho_master}"
-        logger.error(erro_msg)
-        raise FileNotFoundError(erro_msg)
-    
+        caminho_11 = os.path.join(args.dados_dir, "dataset_11.csv")
+        caminho_master = os.path.join(args.dados_dir, "fake_br_master.csv")
+        faltando = [c for c in (caminho_11, caminho_master) if not os.path.exists(c)]
+        if faltando:
+            sys.exit(f"Bases reais não encontradas: {faltando}. Nenhum modelo foi gerado.")
+        df_completo = carregar_dados_reais(caminho_11, caminho_master)
+        treinar_stacking(df_completo, output_path=args.saida, version=args.versao)
+
     logger.info("Pipeline concluído.")
