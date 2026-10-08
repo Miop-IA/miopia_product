@@ -113,7 +113,13 @@ def predizer_risco_stacking(
     p_fake_word = float(svm_word.predict_proba(X_word)[0][1])
 
     # 3. Ramo XGBoost Denso
-    vetor_estilo = [features_estilo[f] for f in ESTILO_FEATURE_NAMES]
+    vetor_estilo_raw = [features_estilo[f] for f in ESTILO_FEATURE_NAMES]
+    scaler_estilo = bundle.get("scaler_estilo")
+    if scaler_estilo is not None:
+        vetor_estilo = scaler_estilo.transform([vetor_estilo_raw])[0]
+    else:
+        vetor_estilo = vetor_estilo_raw
+        
     vetor_temas = extrair_features_topicos(textos["texto_lematizado"], bundle)
     X_denso = np.concatenate([vetor_estilo, vetor_temas]).reshape(1, -1)
 
