@@ -13,13 +13,14 @@ from sqlalchemy.pool import StaticPool
 from api.database import Base, get_db
 from api.main import app
 
-# Configuração de banco de dados SQLite em memória isolado para os testes
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+# Configuração de banco de dados (usa o Postgres do CI se definido, senão cai pro SQLite memory)
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///:memory:")
+is_sqlite = "sqlite" in SQLALCHEMY_DATABASE_URL
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
+    connect_args={"check_same_thread": False} if is_sqlite else {},
+    poolclass=StaticPool if is_sqlite else None,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -38,10 +39,16 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def setup_database():
-    """Garante recriação limpa do schema antes de cada teste."""
-    Base.metadata.create_all(bind=engine)
+    """Limpa os dados antes de cada teste, preservando o schema do Alembic se for Postgres."""
+    if is_sqlite:
+        Base.metadata.create_all(bind=engine)
+    else:
+        with engine.begin() as conn:
+            for table in reversed(Base.metadata.sorted_tables):
+                conn.execute(table.delete())
     yield
-    Base.metadata.drop_all(bind=engine)
+    if is_sqlite:
+        Base.metadata.drop_all(bind=engine)
 
 
 TEXTO_VALIDO_LONGO = (
