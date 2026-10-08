@@ -247,69 +247,47 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
         on=["id_noticia", "target"],
         suffixes=("_11", "_master")
     )
+    
+    # Criar colunas esperadas pelo pipeline de ML
+    if "texto_bert" in df_unificado.columns:
+        df_unificado["texto_cru"] = df_unificado["texto_bert"]
+        df_unificado["texto_limpo"] = df_unificado["texto_bert"].astype(str).str.lower()
+    elif "texto_truncado" in df_unificado.columns:
+        df_unificado["texto_cru"] = df_unificado["texto_truncado"]
+        df_unificado["texto_limpo"] = df_unificado["texto_truncado"].astype(str).str.lower()
+        
+    if "texto_tfidf" in df_unificado.columns:
+        df_unificado["texto_lematizado"] = df_unificado["texto_tfidf"]
+    else:
+        df_unificado["texto_lematizado"] = df_unificado["texto_limpo"]
+
+    renames = {
+        'percentage_of_news_with_spelling_errors': 'rc_spelling_errors',
+        'number_of_modal_verbs_density': 'rc_modal_verbs_density',
+        'number_of_subjuntive_and_imperative_verbs_density': 'rc_subj_imp_verbs_density',
+        'number_of_singular_first_and_second_personal_pronouns_density': 'rc_pron_1_2_sing_density',
+        'number_of_plural_first_personal_pronouns_density': 'rc_pron_1_plur_density',
+    }
+    df_unificado.rename(columns=renames, inplace=True)
+
     return df_unificado
 
-
-def gerar_dados_sinteticos_para_teste(n_samples: int = 80) -> pd.DataFrame:
-    """Gera um DataFrame mock estruturado para validar a execução técnica."""
-    dados = []
-    textos_true = [
-        "O ministério da fazenda publicou portaria com as novas regras fiscais para os estados.",
-        "Pesquisa científica da universidade mapeia os efeitos do clima na agricultura regional.",
-        "Dados divulgados pelo instituto apontam redução do índice de desemprego no trimestre."
-    ]
-    textos_fake = [
-        "URGENTE repasse agora mesmo veja o que o governo escondeu de você escândalo confirmado",
-        "Bomba caiu na rede o plano secreto que a mídia não divulga compartilhe antes que apaguem",
-        "Atenção segredo revelado por fonte anônima tudo vai mudar amanhã repasse já"
-    ]
-
-    for i in range(n_samples):
-        is_fake = i % 2 == 1
-        t_cru = textos_fake[i % len(textos_fake)] if is_fake else textos_true[i % len(textos_true)]
-        t_limpo = t_cru.lower()
-        t_lem = " ".join([w for w in t_limpo.split() if len(w) > 3])
-
-        row = {
-            "texto_cru": t_cru,
-            "texto_limpo": t_limpo,
-            "texto_lematizado": t_lem,
-            "target": 1 if is_fake else 0,
-            "trunc_pausality": np.random.uniform(0.1, 0.4),
-            "trunc_emotiveness": np.random.uniform(0.3, 0.8) if is_fake else np.random.uniform(0.1, 0.4),
-            "trunc_diversity": np.random.uniform(0.6, 0.8),
-            "trunc_upper_case_density": np.random.uniform(0.05, 0.2) if is_fake else np.random.uniform(0.0, 0.05),
-            "trunc_verb_density": np.random.uniform(0.1, 0.3),
-            "trunc_noun_density": np.random.uniform(0.2, 0.5),
-            "trunc_adj_density": np.random.uniform(0.05, 0.2),
-            "trunc_adv_density": np.random.uniform(0.02, 0.1),
-            "trunc_pron_density": np.random.uniform(0.05, 0.15),
-            "link_density": 0.0,
-            "rc_spelling_errors": np.random.uniform(0.02, 0.1) if is_fake else 0.0,
-            "rc_modal_verbs_density": np.random.uniform(0.0, 0.2),
-            "rc_subj_imp_verbs_density": np.random.uniform(0.0, 0.2),
-            "rc_pron_1_2_sing_density": np.random.uniform(0.02, 0.1) if is_fake else 0.0,
-            "rc_pron_1_plur_density": np.random.uniform(0.0, 0.05),
-        }
-        dados.append(row)
-
-    return pd.DataFrame(dados)
 
 
 if __name__ == "__main__":
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     target_joblib = os.path.join(base_dir, "models", "stacking_miopia_0961.joblib")
 
-    caminho_11 = os.path.join(base_dir, "data", "dataset_11.csv")
-    caminho_master = os.path.join(base_dir, "data", "fake_br_master.csv")
+    caminho_11 = os.path.join(base_dir, "api", "data", "dataset_11.csv")
+    caminho_master = os.path.join(base_dir, "api", "data", "fake_br_master.csv")
 
     if os.path.exists(caminho_11) and os.path.exists(caminho_master):
-        logger.info("A carregar bases reais de data/...")
+        logger.info(f"A carregar bases reais: {caminho_11} e {caminho_master}")
         df_completo = carregar_dados_reais(caminho_11, caminho_master)
         treinar_stacking(df_completo, output_path=target_joblib)
     else:
-        logger.warning("Bases reais não encontradas em data/. A executar com dados sintéticos...")
-        df_mock = gerar_dados_sinteticos_para_teste(n_samples=80)
-        treinar_stacking(df_mock, output_path=target_joblib)
+        erro_msg = f"Bases reais não encontradas: {caminho_11} ou {caminho_master}"
+        logger.error(erro_msg)
+        raise FileNotFoundError(erro_msg)
     
     logger.info("Pipeline concluído.")
