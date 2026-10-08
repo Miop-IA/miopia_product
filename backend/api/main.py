@@ -18,7 +18,12 @@ from api.schemas import (
 )
 from api.filtro import normalizar_texto, gerar_hash_texto, validar_viabilidade_analise
 from api.feature_extraction import extrair_pacote_analise
-from api.inferencia import predizer_risco_stacking, classificar_faixa_e_orientacao
+from api.inferencia import (
+    carregar_bundle_stacking,
+    classificar_faixa_e_orientacao,
+    predizer_risco_stacking,
+)
+from api.bundle_spec import ModeloInvalidoError, resumo_bundle
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("miopia_api")
@@ -27,6 +32,14 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Bundle ausente, corrompido ou incompatível impede a API de ficar pronta.
+    try:
+        bundle = carregar_bundle_stacking()
+    except ModeloInvalidoError as e:
+        logger.critical(f"Modelo de produção inválido; abortando startup: {e}")
+        raise
+    logger.info(f"Modelo de produção pronto: {resumo_bundle(bundle)}")
+
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Tabelas inicializadas com sucesso.")
@@ -67,14 +80,33 @@ def obter_contagem_avaliacoes(db: Session, noticia_id: int) -> ContagemAvaliacoe
     )
 
 
+def obter_bundle_ou_503():
+    try:
+        return carregar_bundle_stacking()
+    except ModeloInvalidoError as e:
+        logger.error(f"Modelo de produção indisponível: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Modelo de classificação indisponível.",
+        )
+
+
 @app.get("/health", tags=["Monitoramento"])
 def health_check():
-    return {"status": "online", "environment": settings.environment, "model": "Stacking Parte C (F1=0.961)"}
+    meta = resumo_bundle(obter_bundle_ou_503())
+    return {
+        "status": "online",
+        "environment": settings.environment,
+        "model": f"Stacking {meta['version']} (F1={meta['f1_score']})",
+        "model_version": meta["version"],
+        "feature_count": meta["feature_count"],
+    }
 
 
 @app.post("/analisar", response_model=AnaliseResponse, status_code=status.HTTP_200_OK, tags=["Análise"])
 def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
     texto_puro = payload.texto
+    bundle = obter_bundle_ou_503()
 
     is_valido, motivo, _ = validar_viabilidade_analise(texto_puro)
     if not is_valido:
@@ -88,7 +120,9 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
     if noticia_existente:
         logger.info(f"Cache hit para a hash: {hash_txt}")
         avaliacoes = obter_contagem_avaliacoes(db, noticia_existente.id)
-        _, orientacao = classificar_faixa_e_orientacao(noticia_existente.prob_suspeita)
+        _, orientacao = classificar_faixa_e_orientacao(
+            noticia_existente.prob_suspeita, limiar=float(bundle["limiar"])
+        )
 
         metricas_dto = MetricasEstilometricas(
             trunc_pausality=noticia_existente.trunc_pausality,
@@ -123,8 +157,15 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         )
 
     # 2. Processamento de texto inédito
-    features, textos = extrair_pacote_analise(texto_puro, num_links_param=payload.num_links)
-    prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
+    features, textos = extrair_pacote_analise(texto_puro)
+    try:
+        prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
+    except ModeloInvalidoError as e:
+        logger.error(f"Inferência recusada, modelo inválido: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Modelo de classificação indisponível.",
+        )
 
     nova_noticia = Noticia(
         url=payload.url,

@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List, Union
+from typing import List, Optional, Union
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,6 +27,10 @@ class Settings(BaseSettings):
         default=50,
         ge=1,
         description="Limite máximo de requisições de análise diárias por client_id"
+    )
+    model_path: Optional[str] = Field(
+        default=None,
+        description="Caminho do bundle .joblib do Stacking (padrão: backend/models/stacking_miopia_0961.joblib)"
     )
     environment: str = Field(
         default="development",
