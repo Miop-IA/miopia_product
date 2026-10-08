@@ -65,3 +65,22 @@ def test_ausencia_intersecao_grupos_calibracao():
         
         # A interseção entre os grupos deve ser estritamente vazia
         assert len(train_groups.intersection(val_groups)) == 0
+
+
+def test_paridade_preprocessing_treino_producao():
+    """Garante que a função unificada trate os limites, minúsculas e limpeza de links exatamente igual para API e Treino."""
+    from api.feature_extraction import preparar_texto_comum
+    
+    texto = "Este é um texto longo que será cortado com truncamento. " * 50
+    texto_cru_trunc, texto_limpo, num_links = preparar_texto_comum(texto, max_tokens=10)
+    
+    assert len(texto_cru_trunc.split()) == 10
+    assert len(texto_limpo.split()) <= 10
+    assert texto_limpo.islower()
+    
+    texto_com_link = "Veja o repositório https://github.com/Miop-IA e o portal www.uol.com.br fim."
+    _, limpo, num = preparar_texto_comum(texto_com_link, max_tokens=500)
+    
+    assert num == 2
+    assert "https" not in limpo
+    assert "www" not in limpo

@@ -306,13 +306,19 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
         suffixes=("_11", "_master")
     )
     
-    # Criar colunas esperadas pelo pipeline de ML
-    if "texto_bert" in df_unificado.columns:
-        df_unificado["texto_cru"] = df_unificado["texto_bert"]
-        df_unificado["texto_limpo"] = df_unificado["texto_bert"].astype(str).str.lower()
-    elif "texto_truncado" in df_unificado.columns:
-        df_unificado["texto_cru"] = df_unificado["texto_truncado"]
-        df_unificado["texto_limpo"] = df_unificado["texto_truncado"].astype(str).str.lower()
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from api.feature_extraction import preparar_texto_comum
+
+    logger.info("Aplicando processamento e truncamento padronizado (unificado com API) aos textos do dataset...")
+    def _aplicar_preparacao(row):
+        texto_original = row.get("texto_bert")
+        if pd.isna(texto_original) or not texto_original:
+            texto_original = row.get("texto_truncado", "")
+        texto_cru_trunc, texto_limpo, _ = preparar_texto_comum(str(texto_original), max_tokens=500)
+        return pd.Series([texto_cru_trunc, texto_limpo])
+
+    df_unificado[["texto_cru", "texto_limpo"]] = df_unificado.apply(_aplicar_preparacao, axis=1)
         
     if "texto_tfidf" in df_unificado.columns:
         df_unificado["texto_lematizado"] = df_unificado["texto_tfidf"]

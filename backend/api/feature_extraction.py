@@ -73,12 +73,15 @@ def calcular_mattr(lemas: List[str], window_size: int = 25) -> float:
     return float(sum(ttrs) / len(ttrs))
 
 
-def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dict[str, float], Dict[str, str]]:
+def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500) -> Tuple[str, str, int]:
     """
-    Processa o texto sob o limite de truncamento e retorna:
-    1. Dicionário das 15 features estilométricas (com MATTR em trunc_diversity).
-    2. Dicionário com as 3 representações de texto: texto_cru, texto_limpo, texto_lematizado.
+    Função unificada de preprocessing e truncamento para treino e inferência.
+    Garante que o texto seja limpo e truncado da mesma forma nos dois pipelines.
+    Retorna (texto_cru_trunc, texto_limpo, num_links).
     """
+    if not isinstance(texto_bruto, str) or pd.isna(texto_bruto) if 'pd' in globals() else not texto_bruto:
+        return "", "", 0
+
     texto_sanitizado = sanitizar_texto_noticia(texto_bruto)
 
     palavras_cruas = texto_sanitizado.split()
@@ -91,7 +94,20 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dic
     num_links = len(links)
 
     texto_limpo = re.sub(r"(?:https?://|www\.)[^\s]+", "", texto_cru_trunc)
-    texto_limpo = re.sub(r"[\s\xa0\u200b]+", " ", texto_limpo).strip()
+    # Importante: texto_limpo é convertido para lower case para paridade total com o TF-IDF
+    texto_limpo = re.sub(r"[\s\xa0\u200b]+", " ", texto_limpo).strip().lower()
+
+    return texto_cru_trunc, texto_limpo, num_links
+
+
+def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dict[str, float], Dict[str, str]]:
+    """
+    Processa o texto sob o limite de truncamento e retorna:
+    1. Dicionário das 15 features estilométricas (com MATTR em trunc_diversity).
+    2. Dicionário com as 3 representações de texto: texto_cru, texto_limpo, texto_lematizado.
+    """
+    import pandas as pd
+    texto_cru_trunc, texto_limpo, num_links = preparar_texto_comum(texto_bruto, max_tokens)
 
     doc = nlp(texto_limpo)
     sents = list(doc.sents)
