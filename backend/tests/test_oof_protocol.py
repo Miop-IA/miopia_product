@@ -70,7 +70,7 @@ def test_metamodelo_usa_oof(tmp_path):
         return real_fit(self, X, y, *args, **kwargs)
 
     with patch("train.train.LogisticRegression.fit", fake_fit):
-        with patch("train.train.joblib.dump"): # Evita salvar no disco de verdade
+        with patch("train.train.joblib.dump"), patch("train.train.F1_MINIMO", 0.0):  # dados dummy não atingem o F1 mínimo
             fake_path = os.path.join(tmp_path, "fake_path.joblib")
             treinar_stacking(df_dummy, df_val=df_val, output_path=fake_path)
     

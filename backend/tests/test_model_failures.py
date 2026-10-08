@@ -1,148 +1,108 @@
-import os
+"""
+Falhas de modelo em tempo de requisição: com o bundle inválido, /analisar falha
+fechado (HTTP 503) e nada é gravado. O caminho do modelo é trocado via MODEL_PATH,
+o mesmo mecanismo usado pelo conftest — sem monkeypatch em os.path.
+"""
 import json
+import os
+import shutil
+
 import joblib
 import pytest
-import tempfile
-import importlib
 from fastapi.testclient import TestClient
+
+from api.config import get_settings
+from api.inferencia import resetar_cache_bundle
 from api.main import app
+from tests.conftest import BUNDLE_TESTE_PATH
+from tests.test_api import setup_database  # noqa: F401  (fixture: banco SQLite de teste)
 
-from tests.test_api import setup_database
+TEXTO = "Um texto válido que tenha mais de trinta palavras para não cair no filtro inicial de volume insuficiente. " * 5
 
-import api.inferencia
 
 @pytest.fixture
-def clean_model_cache(setup_database):
-    """Limpa o cache em memória do modelo para forçar recarregamento em cada teste."""
-    api.inferencia._stacking_bundle = None
-    yield
-    api.inferencia._stacking_bundle = None
+def modelo_em(monkeypatch, tmp_path, setup_database):
+    """Copia o bundle de teste + manifesto para tmp_path, aplica uma mutação e aponta a API para lá."""
 
-def get_base_paths():
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    model_path = os.path.join(base_dir, "models", "stacking_miopia_v1.joblib")
-    manifest_path = os.path.join(base_dir, "models", "model_manifest.json")
-    return model_path, manifest_path
+    def _preparar(mutar_bundle=None, mutar_manifesto=None, sem_manifesto=False, conteudo_bruto=None):
+        caminho = tmp_path / "modelo.joblib"
+        manifesto_origem = os.path.join(os.path.dirname(BUNDLE_TESTE_PATH), "model_manifest.json")
+        if conteudo_bruto is not None:
+            caminho.write_bytes(conteudo_bruto)
+        else:
+            bundle = joblib.load(BUNDLE_TESTE_PATH)
+            if mutar_bundle:
+                mutar_bundle(bundle)
+            joblib.dump(bundle, caminho)
+        if not sem_manifesto:
+            with open(manifesto_origem, encoding="utf-8") as f:
+                manifesto = json.load(f)
+            if mutar_manifesto:
+                mutar_manifesto(manifesto)
+            (tmp_path / "model_manifest.json").write_text(json.dumps(manifesto), encoding="utf-8")
+        monkeypatch.setenv("MODEL_PATH", str(caminho))
+        get_settings.cache_clear()
+        resetar_cache_bundle()
 
-def test_falha_arquivo_inexistente(monkeypatch, clean_model_cache):
-    original_exists = os.path.exists
-    monkeypatch.setattr(os.path, "exists", lambda p: False if "stacking_miopia_v1.joblib" in str(p) else original_exists(p))
-    
-    with TestClient(app) as client:
-        response = client.post("/analisar", json={"texto": "Um texto válido que tenha mais de trinta palavras para não cair no filtro inicial de volume insuficiente." * 5})
-        # A API deve falhar fechada (HTTP 503)
-        assert response.status_code == 503
-        assert "não está carregado" in response.json()["detail"]
+    yield _preparar
+    monkeypatch.setenv("MODEL_PATH", BUNDLE_TESTE_PATH)
+    get_settings.cache_clear()
+    resetar_cache_bundle()
 
-def test_falha_arquivo_corrompido(monkeypatch, clean_model_cache):
-    # Cria um arquivo falso que não é um joblib válido
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        tmp.write(b"Este nao e um arquivo joblib valido")
-        fake_path = tmp.name
 
-    original_join = os.path.join
-    def mock_join(*args):
-        if "stacking_miopia_v1.joblib" in args:
-            return fake_path
-        return original_join(*args)
+def _analisar_sem_lifespan():
+    # Sem o "with": o lifespan (que já recusaria o startup) não roda; testamos a rota isolada.
+    return TestClient(app).post("/analisar", json={"texto": TEXTO})
 
-    monkeypatch.setattr(os.path, "join", mock_join)
-    
-    with TestClient(app) as client:
-        response = client.post("/analisar", json={"texto": "Um texto válido que tenha mais de trinta palavras para não cair no filtro inicial de volume insuficiente." * 5})
-        assert response.status_code == 503
-        assert "não está carregado" in response.json()["detail"]
-        
-    os.remove(fake_path)
 
-def test_falha_bundle_incompleto(monkeypatch, clean_model_cache):
-    # Carrega o modelo real e remove uma chave
-    model_path, manifest_path = get_base_paths()
-    real_bundle = joblib.load(model_path)
-    del real_bundle["xgb_denso"]
-    
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        joblib.dump(real_bundle, tmp.name)
-        fake_path = tmp.name
+def _assert_503(resp):
+    assert resp.status_code == 503
+    assert "não está carregado" in resp.json()["detail"]
 
-    original_join = os.path.join
-    def mock_join(*args):
-        if "stacking_miopia_v1.joblib" in args:
-            return fake_path
-        return original_join(*args)
 
-    monkeypatch.setattr(os.path, "join", mock_join)
-    
-    with TestClient(app) as client:
-        response = client.post("/analisar", json={"texto": "Um texto válido que tenha mais de trinta palavras para não cair no filtro inicial de volume insuficiente." * 5})
-        assert response.status_code == 503
-        
-    os.remove(fake_path)
+def test_falha_arquivo_inexistente(monkeypatch, tmp_path, setup_database):
+    monkeypatch.setenv("MODEL_PATH", str(tmp_path / "nao_existe.joblib"))
+    get_settings.cache_clear()
+    resetar_cache_bundle()
+    try:
+        _assert_503(_analisar_sem_lifespan())
+    finally:
+        monkeypatch.setenv("MODEL_PATH", BUNDLE_TESTE_PATH)
+        get_settings.cache_clear()
+        resetar_cache_bundle()
 
-class MockXGB:
-    n_features_in_ = 999
 
-def test_falha_dimensao_errada(monkeypatch, clean_model_cache):
-    model_path, manifest_path = get_base_paths()
-    real_bundle = joblib.load(model_path)
-    
-    # Substitui por um mock com dimensão errada
-    real_bundle["xgb_denso"] = MockXGB()
-    
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        joblib.dump(real_bundle, tmp.name)
-        fake_path = tmp.name
+def test_falha_arquivo_corrompido(modelo_em):
+    modelo_em(conteudo_bruto=b"Este nao e um arquivo joblib valido")
+    _assert_503(_analisar_sem_lifespan())
 
-    original_join = os.path.join
-    def mock_join(*args):
-        if "stacking_miopia_v1.joblib" in args:
-            return fake_path
-        return original_join(*args)
 
-    monkeypatch.setattr(os.path, "join", mock_join)
-    
-    with TestClient(app) as client:
-        response = client.post("/analisar", json={"texto": "Um texto válido que tenha mais de trinta palavras para não cair no filtro inicial de volume insuficiente." * 5})
-        assert response.status_code == 503
-        
-    os.remove(fake_path)
+def test_falha_bundle_incompleto(modelo_em):
+    modelo_em(mutar_bundle=lambda b: b.pop("svm_palavras"))
+    _assert_503(_analisar_sem_lifespan())
 
-def test_falha_manifesto_ausente(monkeypatch, clean_model_cache):
-    original_exists = os.path.exists
-    def mock_exists(p):
-        if "model_manifest.json" in str(p):
-            return False
-        return original_exists(p)
-        
-    monkeypatch.setattr(os.path, "exists", mock_exists)
-    
-    with TestClient(app) as client:
-        response = client.post("/analisar", json={"texto": "Um texto válido que tenha mais de trinta palavras para não cair no filtro inicial de volume insuficiente." * 5})
-        assert response.status_code == 503
 
-def test_falha_manifesto_inconsistente(monkeypatch, clean_model_cache):
-    model_path, manifest_path = get_base_paths()
-    
-    with open(manifest_path, 'r', encoding='utf-8') as f:
-        real_manifest = json.load(f)
-        
-    # Invalida o F1
-    real_manifest["F1"] = 0.50
-    
-    with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8') as tmp:
-        json.dump(real_manifest, tmp)
-        fake_manifest_path = tmp.name
+def test_falha_dimensao_errada(modelo_em):
+    def trocar_lda(b):
+        b["lda_30"] = b["lda_8"]
+    modelo_em(mutar_bundle=trocar_lda)
+    _assert_503(_analisar_sem_lifespan())
 
-    original_join = os.path.join
-    def mock_join(*args):
-        if "model_manifest.json" in args:
-            return fake_manifest_path
-        return original_join(*args)
 
-    monkeypatch.setattr(os.path, "join", mock_join)
-    
-    with TestClient(app) as client:
-        response = client.post("/analisar", json={"texto": "Um texto válido que tenha mais de trinta palavras para não cair no filtro inicial de volume insuficiente." * 5})
-        assert response.status_code == 503
-        
-    os.remove(fake_manifest_path)
+def test_falha_manifesto_ausente(modelo_em):
+    modelo_em(sem_manifesto=True)
+    _assert_503(_analisar_sem_lifespan())
+
+
+def test_falha_manifesto_inconsistente(modelo_em):
+    modelo_em(mutar_manifesto=lambda m: m.update({"F1": 0.50}))
+    _assert_503(_analisar_sem_lifespan())
+
+
+def test_startup_recusa_bundle_invalido(modelo_em):
+    from api.bundle_spec import ModeloInvalidoError
+
+    modelo_em(mutar_bundle=lambda b: b.pop("scaler_estilo"))
+    with pytest.raises(ModeloInvalidoError):
+        with TestClient(app):
+            pass

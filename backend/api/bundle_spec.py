@@ -71,6 +71,7 @@ CHAVES_OBRIGATORIAS = (
     "nmf_8",
     "lda_30",
     "nmf_30",
+    "scaler_estilo",
     "xgb_denso",
     "meta_modelo",
     "limiar",
@@ -86,7 +87,7 @@ class ModeloInvalidoError(RuntimeError):
     """Base: o modelo de produção não pode ser usado. A API não deve servir classificações."""
 
 
-class ModeloAusenteError(ModeloInvalidoError):
+class ModeloAusenteError(ModeloInvalidoError, FileNotFoundError):
     """O arquivo do bundle não existe."""
 
 

@@ -23,7 +23,7 @@ from api.bundle_spec import (
 _stacking_bundle = None
 
 CAMINHO_PADRAO_MODELO = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "stacking_miopia_0961.joblib"
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "stacking_miopia_v1.joblib"
 )
 
 _TEXTO_SMOKE = "verificacao de integridade do modelo de producao durante a inicializacao da api"
@@ -38,12 +38,11 @@ def caminho_modelo() -> str:
 
 def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
     """
-    Carrega o pacote de artefatos do Stacking:
-    - tfidf_char + svm_caracteres
-    - tfidf_word + svm_palavras
-    - lda_8, nmf_8, lda_30, nmf_30
-    - xgb_denso (estilo + temas)
-    - meta_modelo (Regressão Logística com corte dinâmico)
+    Carrega e valida o bundle do Stacking. Nunca cria modelo substituto:
+    - arquivo ausente            -> ModeloAusenteError
+    - arquivo corrompido         -> ModeloCorrompidoError
+    - chave/dimensão/classe/meta -> BundleIncompativelError
+    O bundle só é colocado em cache depois de passar por todas as validações.
     """
     global _stacking_bundle
     if _stacking_bundle is not None and caminho is None:
@@ -51,73 +50,84 @@ def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
 
     model_path = caminho or caminho_modelo()
 
-    if os.path.exists(model_path):
-        try:
-            _stacking_bundle = joblib.load(model_path)
-            
-            # Validação do Bundle Incompleto
-            required_keys = [
-                "tfidf_char", "svm_caracteres", 
-                "tfidf_word", "svm_palavras", 
-                "tfidf_lemmas", "lda_8", "nmf_8", "lda_30", "nmf_30", 
-                "scaler_estilo", "xgb_denso", "meta_modelo", "limiar", "f1_score"
-            ]
-            for k in required_keys:
-                if k not in _stacking_bundle:
-                    raise RuntimeError(f"Bundle corrompido: chave obrigatória '{k}' ausente.")
-                    
-            # Validação Dimensional Completa
-            if hasattr(_stacking_bundle["xgb_denso"], "n_features_in_") and _stacking_bundle["xgb_denso"].n_features_in_ != 103:
-                raise RuntimeError("Dimensão errada: O modelo denso não possui 103 features.")
-                
-            meta_modelo = _stacking_bundle["meta_modelo"]
-            n_meta = getattr(meta_modelo, "n_features_in_", meta_modelo.coef_.shape[1])
-            if n_meta != 3:
-                raise RuntimeError(f"Dimensão errada: O metamodelo deve ter 3 entradas, obteve {n_meta}.")
-                
-            for nome_modelo, n_topicos in [("lda_8", 8), ("nmf_8", 8), ("lda_30", 30), ("nmf_30", 30)]:
-                if _stacking_bundle[nome_modelo].n_components != n_topicos:
-                    raise RuntimeError(f"Dimensão errada: {nome_modelo} não possui {n_topicos} tópicos.")
-                    
-            vocab_size = len(_stacking_bundle["tfidf_lemmas"].vocabulary_)
-            if hasattr(_stacking_bundle["lda_8"], "n_features_in_") and _stacking_bundle["lda_8"].n_features_in_ != vocab_size:
-                raise RuntimeError("Incompatibilidade: tfidf_lemmas não alinhado com os modelos de tópicos.")
-                
-            # Validação do Manifesto
-            manifest_path = os.path.join(base_dir, "models", "model_manifest.json")
-            if not os.path.exists(manifest_path):
-                raise RuntimeError("Manifesto ausente.")
-                
-            import json
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
-                
-            # Manifesto Inconsistente
-            if "feature_count" not in manifest or manifest["feature_count"] != 103:
-                raise RuntimeError("Manifesto inconsistente: feature_count inválido.")
-            if abs(manifest.get("threshold", 0.0) - _stacking_bundle["limiar"]) > 1e-4:
-                raise RuntimeError("Manifesto inconsistente: divergência no threshold.")
-            if abs(manifest.get("F1", 0.0) - _stacking_bundle["f1_score"]) > 1e-4:
-                raise RuntimeError("Manifesto inconsistente: divergência no F1.")
-                
-            logger.info("Pipeline Stacking carregado e validado com sucesso.")
-            return _stacking_bundle
-        except Exception as e:
-            _stacking_bundle = None
-            logger.error(f"Erro ao deserializar ou validar o bundle do Stacking: {e}")
-            raise RuntimeError(f"Erro ao carregar o modelo Stacking: {e}")
+    if not os.path.exists(model_path):
+        raise ModeloAusenteError(f"Artefato do modelo não encontrado: {model_path}")
 
-    error_msg = f"Artefato '{model_path}' não encontrado. O sistema não pode inicializar sem o modelo de inferência."
-    logger.error(error_msg)
-    raise FileNotFoundError(error_msg)
+    try:
+        bundle = joblib.load(model_path)
+    except Exception as e:
+        raise ModeloCorrompidoError(
+            f"Falha ao desserializar o artefato do modelo ({model_path}): {type(e).__name__}: {e}"
+        ) from e
+
+    validar_bundle(bundle)
+    _verificar_manifesto(bundle, model_path)
+    _verificar_execucao(bundle)
+
+    logger.info("Bundle Stacking validado: %s", resumo_bundle(bundle))
+    if caminho is None:
+        _stacking_bundle = bundle
+    return bundle
+
+
+def _verificar_manifesto(bundle: Dict[str, Any], model_path: str) -> None:
+    """O model_manifest.json ao lado do .joblib precisa existir e bater com o bundle."""
+    import json
+
+    manifest_path = os.path.join(os.path.dirname(model_path), "model_manifest.json")
+    if not os.path.exists(manifest_path):
+        raise BundleIncompativelError([f"manifesto ausente: {manifest_path}"])
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    problemas = []
+    if manifest.get("feature_count") != FEATURE_COUNT:
+        problemas.append("manifesto inconsistente: feature_count inválido")
+    if abs(float(manifest.get("threshold", -1.0)) - float(bundle["limiar"])) > 1e-4:
+        problemas.append("manifesto inconsistente: divergência no threshold")
+    if abs(float(manifest.get("F1", -1.0)) - float(bundle["f1_score"])) > 1e-4:
+        problemas.append("manifesto inconsistente: divergência no F1")
+    if problemas:
+        raise BundleIncompativelError(problemas)
+
+
+def _verificar_execucao(bundle: Dict[str, Any]) -> None:
+    """Executa uma inferência sintética ponta a ponta para garantir que os artefatos funcionam juntos."""
+    textos = {"texto_cru": _TEXTO_SMOKE, "texto_limpo": _TEXTO_SMOKE, "texto_lematizado": _TEXTO_SMOKE}
+    features = {nome: 0.0 for nome in ESTILO_FEATURE_NAMES}
+    try:
+        prob = _inferir(bundle, features, textos)
+    except ModeloInvalidoError:
+        raise
+    except Exception as e:
+        raise BundleIncompativelError([f"inferência de verificação falhou: {type(e).__name__}: {e}"]) from e
+    if not (0.0 <= prob <= 1.0) or not np.isfinite(prob):
+        raise BundleIncompativelError([f"inferência de verificação retornou probabilidade inválida: {prob!r}"])
+
+
+def resetar_cache_bundle() -> None:
+    """Descarta o bundle em memória (usado em testes e recarga controlada)."""
+    global _stacking_bundle
+    _stacking_bundle = None
 
 
 def extrair_features_topicos(texto_lematizado: str, bundle: Dict[str, Any]) -> np.ndarray:
-    """Extrai features temáticas contínuas (k+3: distribuição soft, entropia, theta_max, ajuste)."""
+    """
+    Extrai as 88 features temáticas (k+3 por modelo: distribuição soft, entropia, theta_max, ajuste)
+    na ordem LDA8, NMF8, LDA30, NMF30. Sem fallback: modelo ausente é erro.
+    """
+    faltando = [chave for chave, _, _ in BLOCOS_TEMATICOS if chave not in bundle]
+    if "tfidf_lemmas" not in bundle:
+        faltando.append("tfidf_lemmas")
+    if faltando:
+        raise BundleIncompativelError([f"modelos temáticos ausentes: {', '.join(faltando)}"])
+
     vec_lemmas = bundle["tfidf_lemmas"].transform([texto_lematizado])
     vecs = []
-    for model in [bundle["lda_8"], bundle["nmf_8"], bundle["lda_30"], bundle["nmf_30"]]:
-        theta = model.transform(vec_lemmas)[0]
+    for chave, _, k in BLOCOS_TEMATICOS:
+        theta = bundle[chave].transform(vec_lemmas)[0]
+        if theta.shape[0] != k:
+            raise BundleIncompativelError([f"{chave} retornou {theta.shape[0]} temas, esperado {k}"])
         soma = float(np.sum(theta))
         theta_norm = theta / soma if soma > 0 else theta
         eps = 1e-9
@@ -167,8 +177,9 @@ def _inferir(bundle: Dict[str, Any], features_estilo: Dict[str, float], textos: 
     # 3. Ramo XGBoost Denso: 15 estilo + 88 temas = 103
     faltando = [f for f in ESTILO_FEATURE_NAMES if f not in features_estilo]
     if faltando:
-        raise ValueError(f"features estilométricas ausentes: {', '.join(faltando)}")
-    vetor_estilo = np.array([features_estilo[f] for f in ESTILO_FEATURE_NAMES], dtype=np.float32)
+        raise KeyError(f"features estilométricas ausentes: {', '.join(faltando)}")
+    vetor_estilo_raw = np.array([[features_estilo[f] for f in ESTILO_FEATURE_NAMES]], dtype=np.float64)
+    vetor_estilo = bundle["scaler_estilo"].transform(vetor_estilo_raw)[0].astype(np.float32)
     vetor_temas = extrair_features_topicos(textos["texto_lematizado"], bundle)
     X_denso = np.concatenate([vetor_estilo, vetor_temas]).reshape(1, -1)
 
@@ -198,36 +209,8 @@ def predizer_risco_stacking(
     bundle = carregar_bundle_stacking()
     prob_fake_final = _inferir(bundle, features_estilo, textos)
 
-    # 1. Ramo Caracteres
-    vec_char = bundle["tfidf_char"]
-    svm_char = bundle["svm_caracteres"]
-    X_char = vec_char.transform([textos["texto_cru"]])
-    p_fake_char = float(svm_char.predict_proba(X_char)[0][1])
-
-    # 2. Ramo Palavras
-    vec_word = bundle["tfidf_word"]
-    svm_word = bundle["svm_palavras"]
-    X_word = vec_word.transform([textos["texto_limpo"]])
-    p_fake_word = float(svm_word.predict_proba(X_word)[0][1])
-
-    # 3. Ramo XGBoost Denso
-    vetor_estilo_raw = [features_estilo[f] for f in ESTILO_FEATURE_NAMES]
-    scaler_estilo = bundle["scaler_estilo"]
-    vetor_estilo = scaler_estilo.transform([vetor_estilo_raw])[0]
-        
-    vetor_temas = extrair_features_topicos(textos["texto_lematizado"], bundle)
-    X_denso = np.concatenate([vetor_estilo, vetor_temas]).reshape(1, -1)
-
-    xgb_model = bundle["xgb_denso"]
-    p_fake_denso = float(xgb_model.predict_proba(X_denso)[0][1])
-
-    # 4. Metamodelo
-    meta_model = bundle["meta_modelo"]
-    X_meta = np.array([[p_fake_char, p_fake_word, p_fake_denso]])
-    prob_fake_final = float(meta_model.predict_proba(X_meta)[0][1])
-
-    limiar = bundle.get("limiar", 0.46)
-    f1_score_ref = bundle.get("f1_score", 0.0)
+    limiar = float(bundle["limiar"])
+    f1_score_ref = float(bundle["f1_score"])
 
     faixa, orientacao = classificar_faixa_e_orientacao(prob_fake_final, limiar, f1_score_ref)
 
