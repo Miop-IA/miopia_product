@@ -273,6 +273,33 @@ def treinar_stacking(
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         joblib.dump(bundle, output_path, compress=3)
         logger.info(f"Bundle serializado com sucesso em: {output_path}")
+        
+        # Gerar o manifest JSON
+        manifest_path = os.path.join(os.path.dirname(output_path), "model_manifest.json")
+        try:
+            import json, datetime, subprocess, sklearn, xgboost, spacy, sys
+            commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
+            
+            manifest = {
+                "model_version": "v1",
+                "pipeline_version": "1.0",
+                "dataset_version": bundle["dataset_version"],
+                "training_commit": commit_hash,
+                "python_version": sys.version.split()[0],
+                "scikit-learn_version": sklearn.__version__,
+                "xgboost_version": xgboost.__version__,
+                "spacy_version": spacy.__version__,
+                "spacy_model": "pt_core_news_lg",
+                "threshold": bundle["limiar"],
+                "F1": bundle["f1_score"],
+                "feature_count": int(bundle["xgb_denso"].n_features_in_),
+                "training_date": datetime.datetime.now().isoformat()
+            }
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=4)
+            logger.info(f"Manifest serializado com sucesso em: {manifest_path}")
+        except Exception as e:
+            logger.error(f"Erro ao gerar model_manifest.json: {e}")
 
     return bundle
 
