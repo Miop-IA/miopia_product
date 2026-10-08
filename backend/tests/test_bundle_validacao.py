@@ -150,17 +150,26 @@ def test_predicao_recusa_modelo_ausente(apontar_modelo, tmp_path):
 
 
 def test_api_nao_classifica_sem_modelo(apontar_modelo, tmp_path):
-    from tests.test_api import TEXTO_VALIDO_LONGO, TestingSessionLocal, client, engine
+    from tests.test_api import TEXTO_VALIDO_LONGO, TestingSessionLocal, client, engine, is_sqlite
     from api.database import Base
     from api.models import Noticia
 
-    Base.metadata.create_all(bind=engine)
+    if is_sqlite:
+        Base.metadata.create_all(bind=engine)
+    else:
+        with engine.begin() as conn:
+            for table in reversed(Base.metadata.sorted_tables):
+                conn.execute(table.delete())
+
+    with TestingSessionLocal() as db:
+        qtd_antes = db.query(Noticia).count()
+
     apontar_modelo(str(tmp_path / "nao_existe.joblib"))
     resp = client.post("/analisar", json={"texto": TEXTO_VALIDO_LONGO})
     assert resp.status_code == 503
     assert client.get("/health").status_code == 503
     with TestingSessionLocal() as db:
-        assert db.query(Noticia).count() == 0
+        assert db.query(Noticia).count() == qtd_antes == 0
 
 
 # --------------------------------------------------------------------------- #
