@@ -25,7 +25,7 @@ O **Miop.IA** é uma solução para análise de credibilidade e detecção de pa
   • PostgreSQL/Neon (prod)             1. Ramo Char: TF-IDF (3-5) + LinearSVC
   • Armazenamento Completo do Texto    2. Ramo Word: TF-IDF (1-2) + LinearSVC
   • Votos da Comunidade                3. Ramo Estilo + Temas: 15 métricas + LDA/NMF -> XGBoost
-                                       4. Meta-Modelo: Regressão Logística (corte 0.46)
+                                       4. Meta-Modelo: Regressão Logística (corte dinâmico otimizado via OOF)
 ```
 
 ---

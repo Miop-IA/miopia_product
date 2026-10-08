@@ -19,7 +19,7 @@ def carregar_bundle_stacking():
     - tfidf_word + svm_palavras
     - lda_8, nmf_8, lda_30, nmf_30
     - xgb_denso (estilo + temas)
-    - meta_modelo (Regressão Logística com corte 0.46)
+    - meta_modelo (Regressão Logística com corte dinâmico)
     """
     global _stacking_bundle
     if _stacking_bundle is not None:
@@ -125,7 +125,7 @@ def predizer_risco_stacking(
     1. svm_caracteres: TF-IDF (char 3-5) no texto cru
     2. svm_palavras: TF-IDF (1-2 gramas) no texto limpo
     3. xgb_denso: Estilo (15 features) + Temas LDA/NMF (k=8 e k=30)
-    4. Meta-modelo: Regressão Logística com limiar 0.46
+    4. Meta-modelo: Regressão Logística com limiar dinâmico do bundle
     """
     bundle = carregar_bundle_stacking()
 

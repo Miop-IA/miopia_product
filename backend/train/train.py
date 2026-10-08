@@ -196,16 +196,29 @@ def treinar_stacking(
     logger.info(f"Pesos do Meta-Modelo (Char, Word, Denso): {meta_lr.coef_[0]}")
 
     # -------------------------------------------------------------
-    # 6. Avaliação e Verificação do Limiar 0.46
+    # 6. Avaliação e Seleção do Limiar via OOF (Sem Tocar no Teste)
     # -------------------------------------------------------------
-    limiar_decisao = 0.46
+    logger.info("A calcular limiar ótimo via F1-score no conjunto OOF...")
+    p_fake_oof = meta_lr.predict_proba(X_meta_train)[:, 1]
+    
+    melhor_limiar = 0.5
+    melhor_f1_oof = 0.0
+    
+    for lim in np.arange(0.1, 0.9, 0.01):
+        y_pred_cand = (p_fake_oof >= lim).astype(int)
+        f1_cand = f1_score(y_train, y_pred_cand, pos_label=1)
+        if f1_cand > melhor_f1_oof:
+            melhor_f1_oof = f1_cand
+            melhor_limiar = lim
+
+    limiar_decisao = round(float(melhor_limiar), 2)
+    logger.info(f"Limiar ótimo selecionado sem vazamento (OOF): {limiar_decisao} com F1={melhor_f1_oof:.4f}")
     
     # 6.1 Relatório de Desenvolvimento (OOF)
     logger.info("--- RELATÓRIO DO CONJUNTO DE DESENVOLVIMENTO (OOF) ---")
-    p_fake_oof = meta_lr.predict_proba(X_meta_train)[:, 1]
     y_pred_oof = (p_fake_oof >= limiar_decisao).astype(int)
     f1_oof = f1_score(y_train, y_pred_oof, pos_label=1)
-    logger.info(f"F1-Score OOF: {f1_oof:.4f}")
+    logger.info(f"F1-Score OOF (limiar {limiar_decisao}): {f1_oof:.4f}")
     logger.info("\n" + classification_report(y_train, y_pred_oof, target_names=["Verdadeiro", "Falso"]))
     
     # 6.2 Relatório de Teste
