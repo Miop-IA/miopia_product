@@ -28,7 +28,7 @@ def test_extracao_pacote_features():
 
 
 def test_inferencia_stacking_e_limiar():
-    """Testa se o modelo serializado processa as predições e aplica o limiar 0.46."""
+    """Testa se o modelo serializado processa as predições e devolve o F1 registrado no bundle."""
     texto = (
         "URGENTE repasse agora mesmo veja o que o governo escondeu de você escândalo "
         "confirmado pela imprensa independente compartilhe já antes que apaguem tudo."
@@ -38,7 +38,7 @@ def test_inferencia_stacking_e_limiar():
 
     assert 0.0 <= prob <= 1.0
     assert faixa in ["Confiavel", "Atencao", "Suspeita"]
-    assert f1_ref == 0.961
+    assert f1_ref == carregar_bundle_stacking()["f1_score"]
 
 
 def test_filtro_viabilidade_texto_curto():

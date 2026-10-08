@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Tuple
 import joblib
 import numpy as np
@@ -19,24 +20,12 @@ from xgboost import XGBClassifier
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("train_stacking")
 
-# 15 características estilométricas
-ESTILO_FEATURE_NAMES = [
-    "trunc_pausality",
-    "trunc_emotiveness",
-    "trunc_diversity",  # MATTR com janela de 25 palavras
-    "trunc_upper_case_density",
-    "trunc_verb_density",
-    "trunc_noun_density",
-    "trunc_adj_density",
-    "trunc_adv_density",
-    "trunc_pron_density",
-    "link_density",
-    "rc_spelling_errors",
-    "rc_modal_verbs_density",
-    "rc_subj_imp_verbs_density",
-    "rc_pron_1_2_sing_density",
-    "rc_pron_1_plur_density",
-]
+# Contrato compartilhado com a API (15 estilo + 88 temas = 103 features)
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+from api.bundle_spec import ESTILO_FEATURE_NAMES, FEATURE_COUNT, FEATURE_ORDER, validar_bundle  # noqa: E402
 
 
 def extrair_vetor_k_mais_3(model, X_text_transformed: np.ndarray) -> np.ndarray:
@@ -68,7 +57,8 @@ def extrair_vetor_k_mais_3(model, X_text_transformed: np.ndarray) -> np.ndarray:
 def treinar_stacking(
     df_treino: pd.DataFrame,
     df_val: pd.DataFrame = None,
-    output_path: str = None
+    output_path: str = None,
+    version: str = None,
 ) -> Dict:
     """
     Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística.
@@ -142,6 +132,8 @@ def treinar_stacking(
     logger.info("A treinar XGBoost Denso (Estilo + Temas)...")
     X_estilo = df_treino[ESTILO_FEATURE_NAMES].values
     X_denso_train = np.hstack([X_estilo, v_lda8, v_nmf8, v_lda30, v_nmf30])
+    if X_denso_train.shape[1] != FEATURE_COUNT:
+        raise ValueError(f"Vetor denso com {X_denso_train.shape[1]} features, contrato exige {FEATURE_COUNT}")
 
     xgb_denso = XGBClassifier(
         n_estimators=150,
@@ -219,10 +211,17 @@ def treinar_stacking(
         "nmf_30": nmf_30,
         "xgb_denso": xgb_denso,
         "meta_modelo": meta_lr,
-        "limiar": 0.46,
-        "f1_score": 0.961,
-        "feature_names_estilo": ESTILO_FEATURE_NAMES,
+        "limiar": limiar_decisao,
+        "f1_score": float(f1_obtido),
+        "f1_avaliado_em": "validacao" if df_val is not None else "treino",
+        "feature_names_estilo": list(ESTILO_FEATURE_NAMES),
+        "feature_order": list(FEATURE_ORDER),
+        "feature_count": FEATURE_COUNT,
+        "version": version or datetime.now(timezone.utc).strftime("stacking-%Y%m%dT%H%M%SZ"),
     }
+
+    # O mesmo contrato verificado no startup da API: nunca serializar bundle inválido.
+    validar_bundle(bundle)
 
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -297,19 +296,32 @@ def gerar_dados_sinteticos_para_teste(n_samples: int = 80) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    target_joblib = os.path.join(base_dir, "models", "stacking_miopia_0961.joblib")
+    import argparse
 
-    caminho_11 = os.path.join(base_dir, "data", "dataset_11.csv")
-    caminho_master = os.path.join(base_dir, "data", "fake_br_master.csv")
+    parser = argparse.ArgumentParser(description="Treina o bundle Stacking Miop.IA.")
+    parser.add_argument("--dados-dir", default=os.path.join(_BACKEND_DIR, "api", "data"),
+                        help="Pasta com dataset_11.csv e fake_br_master.csv")
+    parser.add_argument("--saida", default=os.path.join(_BACKEND_DIR, "models", "stacking_miopia_0961.joblib"))
+    parser.add_argument("--versao", default=None, help="Identificador de versão gravado no bundle")
+    parser.add_argument("--sintetico", action="store_true",
+                        help="Treina com dados sintéticos (apenas para testes; exige --saida diferente da produção)")
+    args = parser.parse_args()
 
-    if os.path.exists(caminho_11) and os.path.exists(caminho_master):
-        logger.info("A carregar bases reais de data/...")
-        df_completo = carregar_dados_reais(caminho_11, caminho_master)
-        treinar_stacking(df_completo, output_path=target_joblib)
-    else:
-        logger.warning("Bases reais não encontradas em data/. A executar com dados sintéticos...")
+    saida_producao = os.path.abspath(os.path.join(_BACKEND_DIR, "models", "stacking_miopia_0961.joblib"))
+
+    if args.sintetico:
+        if os.path.abspath(args.saida) == saida_producao:
+            sys.exit("Recusado: bundle sintético não pode sobrescrever o artefato de produção. Use --saida.")
+        logger.warning("Treinando com dados SINTÉTICOS (somente teste).")
         df_mock = gerar_dados_sinteticos_para_teste(n_samples=80)
-        treinar_stacking(df_mock, output_path=target_joblib)
-    
+        treinar_stacking(df_mock, output_path=args.saida, version=args.versao or "sintetico-teste")
+    else:
+        caminho_11 = os.path.join(args.dados_dir, "dataset_11.csv")
+        caminho_master = os.path.join(args.dados_dir, "fake_br_master.csv")
+        faltando = [c for c in (caminho_11, caminho_master) if not os.path.exists(c)]
+        if faltando:
+            sys.exit(f"Bases reais não encontradas: {faltando}. Nenhum modelo foi gerado.")
+        df_completo = carregar_dados_reais(caminho_11, caminho_master)
+        treinar_stacking(df_completo, output_path=args.saida, version=args.versao)
+
     logger.info("Pipeline concluído.")

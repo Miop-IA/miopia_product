@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from api.database import Base, get_db
 from api.main import app
+from api.inferencia import carregar_bundle_stacking
 
 # Configuração de banco de dados SQLite em memória isolado para os testes
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -87,7 +88,7 @@ def test_analisar_noticia_sucesso_e_estrutura():
     assert len(data["hash_texto"]) == 64
     assert 0.0 <= data["prob_suspeita"] <= 1.0
     assert data["faixa"] in ["Confiavel", "Atencao", "Suspeita"]
-    assert data["modelo_f1"] == 0.961
+    assert data["modelo_f1"] == carregar_bundle_stacking()["f1_score"]
 
     metricas = data["metricas"]
     assert len(metricas) == 15
