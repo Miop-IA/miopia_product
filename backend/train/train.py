@@ -308,33 +308,29 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
     
     import sys
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from api.feature_extraction import preparar_texto_comum, recalcular_spelling_errors_texto
+    from api.feature_extraction import extrair_pacote_analise
+    from api.feature_contract import ESTILO_FEATURE_NAMES
 
-    logger.info("Aplicando processamento e truncamento padronizado (unificado com API) aos textos do dataset...")
-    def _aplicar_preparacao(row):
+    logger.info("Recalculando TODAS as features estilométricas usando as regras unificadas de produção...")
+    def _aplicar_tudo(row):
         texto_original = row.get("texto_bert")
         if pd.isna(texto_original) or not texto_original:
             texto_original = row.get("texto_truncado", "")
-        texto_cru_trunc, texto_limpo, _ = preparar_texto_comum(str(texto_original), max_tokens=500)
-        return pd.Series([texto_cru_trunc, texto_limpo])
-
-    df_unificado[["texto_cru", "texto_limpo"]] = df_unificado.apply(_aplicar_preparacao, axis=1)
         
-    if "texto_tfidf" in df_unificado.columns:
-        df_unificado["texto_lematizado"] = df_unificado["texto_tfidf"]
-    else:
-        df_unificado["texto_lematizado"] = df_unificado["texto_limpo"]
+        features_dict, representacoes = extrair_pacote_analise(str(texto_original), max_tokens=500)
+        
+        out = {
+            "texto_cru": representacoes["texto_cru"],
+            "texto_limpo": representacoes["texto_limpo"],
+            "texto_lematizado": representacoes["texto_lematizado"]
+        }
+        for feat in ESTILO_FEATURE_NAMES:
+            out[feat] = features_dict[feat]
+            
+        return pd.Series(out)
 
-    renames = {
-        'number_of_modal_verbs_density': 'rc_modal_verbs_density',
-        'number_of_subjuntive_and_imperative_verbs_density': 'rc_subj_imp_verbs_density',
-        'number_of_singular_first_and_second_personal_pronouns_density': 'rc_pron_1_2_sing_density',
-        'number_of_plural_first_personal_pronouns_density': 'rc_pron_1_plur_density',
-    }
-    df_unificado.rename(columns=renames, inplace=True)
-    
-    logger.info("Recalculando rc_spelling_errors unificado...")
-    df_unificado["rc_spelling_errors"] = df_unificado["texto_limpo"].apply(recalcular_spelling_errors_texto)
+    cols = ["texto_cru", "texto_limpo", "texto_lematizado"] + ESTILO_FEATURE_NAMES
+    df_unificado[cols] = df_unificado.apply(_aplicar_tudo, axis=1)
 
     return df_unificado
 

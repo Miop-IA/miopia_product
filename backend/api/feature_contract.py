@@ -72,7 +72,7 @@ ESTILO_FEATURE_CONTRACT = [
         "name": "trunc_pron_density",
         "formula": "pos_counts['PRON'] / num_words",
         "denominador": "num_words",
-        "tokens_considerados": "PRON",
+        "tokens_considerados": "PRON, DET",
         "entrada_utilizada": "texto_limpo",
         "ordem_no_vetor": 8
     },
@@ -96,7 +96,7 @@ ESTILO_FEATURE_CONTRACT = [
         "name": "rc_modal_verbs_density",
         "formula": "modal_verbs_count / num_words",
         "denominador": "num_words",
-        "tokens_considerados": "Lemas em MODAL_LEMMAS ('poder', 'dever', 'precisar', 'querer', 'costumar', 'saber') + locução 'ter que/de'",
+        "tokens_considerados": "Verbos (VERB, AUX) com lema em MODAL_LEMMAS ('poder', 'dever', 'precisar', 'querer', 'costumar', 'saber') + locução 'ter que/de'",
         "entrada_utilizada": "texto_limpo",
         "ordem_no_vetor": 11
     },
@@ -104,7 +104,7 @@ ESTILO_FEATURE_CONTRACT = [
         "name": "rc_subj_imp_verbs_density",
         "formula": "subj_imp_count / num_words",
         "denominador": "num_words",
-        "tokens_considerados": "Verbos com Morph Mood 'Sub' ou 'Imp'",
+        "tokens_considerados": "Verbos (VERB, AUX) com Morph Mood 'Sub' ou 'Imp'",
         "entrada_utilizada": "texto_limpo",
         "ordem_no_vetor": 12
     },
@@ -112,7 +112,7 @@ ESTILO_FEATURE_CONTRACT = [
         "name": "rc_pron_1_2_sing_density",
         "formula": "pron_1_2_sing_count / num_words",
         "denominador": "num_words",
-        "tokens_considerados": "Pronomes de 1ª ou 2ª pessoa do singular",
+        "tokens_considerados": "Pronomes/Determinantes (PRON, DET) de 1ª ou 2ª pessoa do singular (via spaCy) ou em lista explícita",
         "entrada_utilizada": "texto_limpo",
         "ordem_no_vetor": 13
     },
@@ -120,7 +120,7 @@ ESTILO_FEATURE_CONTRACT = [
         "name": "rc_pron_1_plur_density",
         "formula": "pron_1_plur_count / num_words",
         "denominador": "num_words",
-        "tokens_considerados": "Pronomes de 1ª pessoa do plural",
+        "tokens_considerados": "Pronomes/Determinantes (PRON, DET) de 1ª pessoa do plural (via spaCy) ou em lista explícita",
         "entrada_utilizada": "texto_limpo",
         "ordem_no_vetor": 14
     }

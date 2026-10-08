@@ -109,4 +109,30 @@ def test_rc_spelling_errors_repete_palavra():
     # rc_spelling_errors = 3 / 4 = 0.75
     texto = "caxorrrro caxorrrro serto correto"
     features, _ = extrair_pacote_analise(texto)
-    assert features["rc_spelling_errors"] == 0.75
+    assert features["rc_spelling_errors"] == 0.75
+
+def test_pos_regras_ambiguas():
+    """Valida se as contagens das features baseadas em POS funcionam com casos ambíguos."""
+    # "meu" -> DET (conta como PRON)
+    # "eu" -> PRON (conta como PRON e pron_1_2_sing)
+    # "poder" -> NOUN (não conta como modal verb)
+    # "posso" -> VERB + AUX (conta como modal verb)
+    # "faça" -> VERB (mood=Imp)
+    texto = "Meu amigo, eu tenho o poder, mas só se eu posso. Faça isso agora!"
+    
+    # words = 14 (meu, amigo, eu, tenho, o, poder, mas, só, se, eu, posso, faça, isso, agora)
+    # meu (1_2_sing), eu (1_2_sing), eu (1_2_sing) -> 3
+    # posso (modal) -> 1
+    # faça (imp) -> 1
+    
+    features, _ = extrair_pacote_analise(texto)
+    
+    assert features["rc_modal_verbs_density"] > 0
+    assert features["rc_subj_imp_verbs_density"] > 0
+    assert features["rc_pron_1_2_sing_density"] > 0
+    
+    # "o poder" -> poder = NOUN. "posso" -> VERB (MODAL_LEMMAS)
+    # Se 'poder' fosse contato como verbo modal, teríamos > 1. Aqui deve ser exatamente 1 modal (posso) para 14 palavras.
+    # 1 / 14 = 0.0714
+    assert round(features["rc_modal_verbs_density"], 2) == 0.07
+

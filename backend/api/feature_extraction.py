@@ -83,16 +83,6 @@ def calcular_rc_spelling_errors(spell_candidates: List[str], num_words: int) -> 
     qtd_erros = sum(1 for word in spell_candidates if word in erros_unicos)
     return float(qtd_erros / num_words)
 
-def recalcular_spelling_errors_texto(texto_limpo: str) -> float:
-    """Helper usado para reprocessar o dataframe de treino com o algoritmo unificado."""
-    if not isinstance(texto_limpo, str) or not texto_limpo.strip():
-        return 0.0
-    doc = nlp(texto_limpo)
-    tokens_palavras = [t for t in doc if not t.is_space and t.is_alpha]
-    num_words = max(len(tokens_palavras), 1)
-    spell_candidates = [t.text for t in tokens_palavras if t.is_lower and len(t.text) > 2 and t.pos_ != "PROPN"]
-    return calcular_rc_spelling_errors(spell_candidates, num_words)
-
 
 def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500, num_links_param: Optional[int] = None) -> Tuple[str, str, int]:
     """
@@ -174,29 +164,33 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500, num_links_pa
             pos_counts["ADJ"] += 1
         elif pos == "ADV":
             pos_counts["ADV"] += 1
-        elif pos == "PRON":
+        elif pos in ("PRON", "DET"):
             pos_counts["PRON"] += 1
 
-        if t.lemma_ in MODAL_LEMMAS:
+        is_verb = pos in ("VERB", "AUX")
+        
+        if is_verb and t.lemma_ in MODAL_LEMMAS:
             modal_verbs_count += 1
-        elif t.lemma_ == "ter" and i < doc_length - 1:
+        elif is_verb and t.lemma_ == "ter" and i < doc_length - 1:
             if doc[i + 1].lower_ in ("que", "de"):
                 modal_verbs_count += 1
 
         moods = t.morph.get("Mood")
-        if moods and ("Sub" in moods or "Imp" in moods):
+        if is_verb and moods and ("Sub" in moods or "Imp" in moods):
             subj_imp_count += 1
 
         person = t.morph.get("Person")
         number = t.morph.get("Number")
+        is_pron_det = pos in ("PRON", "DET")
+        
         is_1_2_sing = (
-            pos == "PRON" and person and ("1" in person or "2" in person) and number and "Sing" in number
+            is_pron_det and person and ("1" in person or "2" in person) and number and "Sing" in number
         ) or (t_lower in PRON_1_2_SING)
         if is_1_2_sing:
             pron_1_2_sing_count += 1
 
         is_1_plur = (
-            pos == "PRON" and person and "1" in person and number and "Plur" in number
+            is_pron_det and person and "1" in person and number and "Plur" in number
         ) or (t_lower in PRON_1_PLUR)
         if is_1_plur:
             pron_1_plur_count += 1
@@ -222,8 +216,8 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500, num_links_pa
         "trunc_pron_density": round(float(pos_counts["PRON"] / num_words), 4),
         "link_density": round(float(num_links / num_words), 4),
         "rc_spelling_errors": round(float(rc_spelling_errors), 4),
-        "rc_modal_verbs_density": round(float(modal_verbs_count / total_verbos), 4),
-        "rc_subj_imp_verbs_density": round(float(subj_imp_count / total_verbos), 4),
+        "rc_modal_verbs_density": round(float(modal_verbs_count / num_words), 4),
+        "rc_subj_imp_verbs_density": round(float(subj_imp_count / num_words), 4),
         "rc_pron_1_2_sing_density": round(float(pron_1_2_sing_count / num_words), 4),
         "rc_pron_1_plur_density": round(float(pron_1_plur_count / num_words), 4),
     }
