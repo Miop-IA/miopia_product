@@ -5,7 +5,8 @@
   "description": "Analisa características de desinformação em notícias online e promove pensamento crítico.",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage"
   ],
   "host_permissions": [
     "http://localhost:8000/*",

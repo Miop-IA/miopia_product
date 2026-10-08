@@ -14,7 +14,7 @@ O benchmark avalia automaticamente a qualidade de:
 - Pacotes instalados (rode `npm install` na pasta `benchmark`).
 
 ## Como rodar
-Dentro da pasta `miopia/benchmark`, execute:
+Com a API rodando em `localhost:8000`, dentro da pasta `frontend/benchmark`, execute:
 
 ```bash
 npm run benchmark

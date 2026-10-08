@@ -95,12 +95,26 @@ python -m venv .venv
 source .venv/bin/activate
 
 # Instalação das dependências de produção e testes
+# (inclui o modelo spaCy pt_core_news_lg, ~500 MB; a primeira instalação pode levar alguns minutos)
 pip install --upgrade pip
 pip install -r requirements-dev.txt
+```
 
-# Inicialização do banco de dados local (SQLite)
+Crie o arquivo `backend/.env` apontando para um banco SQLite local. **Sem esse arquivo, a API e o Alembic tentam conectar a um PostgreSQL em `localhost:5432` e falham.** O [`.env.example`](backend/.env.example) é voltado à produção (Neon PostgreSQL); para desenvolvimento local use:
+
+```bash
+# No Windows (PowerShell):
+Set-Content .env "DATABASE_URL=sqlite:///miopia_local.db`nENVIRONMENT=development`nLIMITE_DIARIO_POR_CLIENTE=50"
+# No Linux / macOS:
+printf 'DATABASE_URL=sqlite:///miopia_local.db\nENVIRONMENT=development\nLIMITE_DIARIO_POR_CLIENTE=50\n' > .env
+
+# Criação do banco e aplicação das migrações (Alembic)
 python scripts/init_db.py
 ```
+
+> **Nota:** use um banco novo (`miopia_local.db`, já ignorado pelo `.gitignore`). O `backend/miopia.db` presente no repositório está com o carimbo do Alembic numa revisão inexistente (`c967fc279a22`) e faz o `init_db.py` falhar.
+
+O bundle do modelo (`backend/models/stacking_miopia_v1.joblib`) e o `model_manifest.json` já vêm versionados no repositório. Se estiverem ausentes ou corrompidos, a API não sobe.
 
 ### 2. Execução da API
 
@@ -118,7 +132,8 @@ uvicorn api.main:app --reload --port 8000
 1. Abra o navegador e acesse: `chrome://extensions/`.
 2. Ative o alternador **Modo do desenvolvedor** (*Developer mode*) no canto superior direito.
 3. Clique no botão **Carregar sem compactação** (*Load unpacked*).
-4. Selecione a pasta [`miopia/`](file:///c:/Users/25894064/Documents/miopia_product/miopia) da raiz do projeto.
+4. Selecione a pasta [`frontend/`](frontend/) da raiz do projeto (onde está o `manifest.json`).
+   * A extensão chama a API em `http://localhost:8000`, então o backend do passo 2 precisa estar rodando. Caso contrário, o popup mostra *"Erro ao analisar: Failed to fetch"*.
 5. Abra uma página de notícia (ex: *G1, Folha, Estadão, CNN*) e clique no ícone da extensão para testar.
 
 ---
@@ -127,9 +142,10 @@ uvicorn api.main:app --reload --port 8000
 
 O repositório conta com testes unitários e de integração utilizando `pytest` cobrindo regras de negócio, endpoints e sanidade do modelo de ML:
 
+Com o ambiente virtual ativado (passo 1), dentro de `backend/`:
+
 ```bash
-cd backend
-.\.venv\Scripts\pytest -v
+pytest -v
 ```
 
 ### Resultados da Suíte de Testes e CI (100% de Aprovação):
