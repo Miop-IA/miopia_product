@@ -197,4 +197,4 @@ def test_classes_e_threshold():
     
     assert classificar_faixa_e_orientacao(0.62, limiar=0.46)[0] == "Suspeita"
     assert classificar_faixa_e_orientacao(0.99, limiar=0.46)[0] == "Suspeita"
-
+
