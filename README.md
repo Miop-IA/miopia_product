@@ -2,8 +2,8 @@
 
 O **Miop.IA** é uma solução para análise de credibilidade e detecção de padrões de desinformação em notícias escritas em Língua Portuguesa. O sistema é composto por:
 1. **Extensão para Google Chrome (Manifest V3):** Interface client-side para extração contextual do corpo da matéria e exibição do diagnóstico.
-2. **API Backend em Python (FastAPI):** Servidor ASGI assíncrono para validação textual, extração de features, inferência em cache $O(1)$ e registro de feedback comunitário.
-3. **Pipeline de Machine Learning (Stacking Ensemble Multivisão):** Classificador ensemble híbrido combinando estilometria avançada (MATTR, POS tags, ortografia), modelagem temática (LDA e NMF), $n$-gramas em nível de caractere/palavra e metamodelo supervisionado (F1 aferido no manifesto).
+2. **API Backend em Python (FastAPI):** Servidor ASGI assíncrono para validação textual, extração de features, inferência estruturada e registro de feedback comunitário.
+3. **Pipeline de Machine Learning (Stacking Ensemble Multivisão):** Classificador ensemble híbrido combinando estilometria avançada (MATTR, POS tags, ortografia), modelagem temática (LDA e NMF), $n$-gramas em nível de caractere/palavra e metamodelo supervisionado (F1 atual $\approx 0.67$ aferido no manifesto).
 
 ---
 
@@ -21,11 +21,11 @@ O **Miop.IA** é uma solução para análise de credibilidade e detecção de pa
                           │
        ┌──────────────────┴──────────────────┐
        ▼                                     ▼
-[ Cache / Banco de Dados ]           [ Pipeline de ML (Stacking) ]
-  • SQLite local (dev)                 1. Ramo Char: TF-IDF (3-5) + LinearSVC
-  • PostgreSQL/Neon (prod)             2. Ramo Word: TF-IDF (1-2) + LinearSVC
-  • Busca por Hash SHA-256             3. Ramo Estilo + Temas: 15 métricas + LDA/NMF -> XGBoost
-  • Votos da Comunidade                4. Meta-Modelo: Regressão Logística (corte 0.46)
+[ Banco de Dados ]                   [ Pipeline de ML (Stacking) ]
+  • PostgreSQL/Neon (prod)             1. Ramo Char: TF-IDF (3-5) + LinearSVC
+  • Armazenamento Completo do Texto    2. Ramo Word: TF-IDF (1-2) + LinearSVC
+  • Votos da Comunidade                3. Ramo Estilo + Temas: 15 métricas + LDA/NMF -> XGBoost
+                                       4. Meta-Modelo: Regressão Logística (corte 0.46)
 ```
 
 ---
@@ -38,9 +38,9 @@ O **Miop.IA** é uma solução para análise de credibilidade e detecção de pa
 | [`backend/api/`](file:///c:/Users/25894064/Documents/miopia_product/backend/api) | **Núcleo da API FastAPI:** Endpoints REST (`main.py`), modelos de dados Pydantic (`schemas.py`), ORM SQLAlchemy (`models.py`, `database.py`), configurações (`config.py`), sanitização/validação (`filtro.py`), extrator estilométrico (`feature_extraction.py`) e orquestrador de inferência (`inferencia.py`). |
 | [`backend/models/`](file:///c:/Users/25894064/Documents/miopia_product/backend/models) | **Artefatos Treinados de IA:** Pacote serializado com o modelo Stacking (`stacking_miopia_v1.joblib`). |
 | [`backend/train/`](file:///c:/Users/25894064/Documents/miopia_product/backend/train) | **Módulo de Treinamento e Calibração:** Script de treinamento (`train.py`) com validação cruzada, ajuste de hiperparâmetros e exportação de artefatos. |
-| [`backend/tests/`](file:///c:/Users/25894064/Documents/miopia_product/backend/tests) | **Suíte de Testes Automatizados:** Testes de ponta a ponta da API (`test_api.py`), testes unitários do pipeline e limiares (`test_pipeline.py`) e script de teste direto de inferência (`teste_inferencia.py`). |
-| [`backend/scripts/`](file:///c:/Users/25894064/Documents/miopia_product/backend/scripts) | **Scripts Utilitários:** Inicialização e criação do schema de banco de dados (`init_db.py`). |
-| [`backend/schema.sql`](file:///c:/Users/25894064/Documents/miopia_product/backend/schema.sql) | Definição DDL em SQL das tabelas de `noticias` e `avaliacoes`. |
+| [`backend/tests/`](file:///c:/Users/25894064/Documents/miopia_product/backend/tests) | **Suíte de Testes Automatizados:** Testes de ponta a ponta da API (`test_api.py`), falhas estruturais (`test_model_failures.py`), integridade de manifesto (`test_model_integrity.py`), paridade de extração (`test_parity_real.py`) e testes de OOF (`test_oof_protocol.py`). |
+| [`backend/scripts/`](file:///c:/Users/25894064/Documents/miopia_product/backend/scripts) | **Scripts Utilitários:** Inicialização do banco. |
+| [`backend/alembic/`](file:///c:/Users/25894064/Documents/miopia_product/backend/alembic) | **Migrations Alembic:** Versões de schema e atualização do banco. |
 
 ---
 
@@ -51,14 +51,14 @@ O classificador não se apoia exclusivamente em palavras-chave contextuais, util
 1. **Ramo de Caracteres (`svm_caracteres`):**
    * TF-IDF em $n$-gramas de caracteres (3 a 5 gramas). Captura prefixos, sufixos, pontuação e microestruturas morfológicas.
 2. **Ramo de Palavras (`svm_palavras`):**
-   * TF-IDF de 1 a 2 gramas de palavras limpas, com remoção de stopwords padrão.
+   * TF-IDF de 1 a 2 gramas de palavras limpas (minúsculas, espaços normalizados), **sem** remoção de stopwords (para preservar coesão linguística e evitar viés estrutural).
 3. **Ramo Estilométrico e Temático (`xgb_denso`):**
    * **15 Features Estilométricas:**
      * `trunc_diversity`: **MATTR** (*Moving-Average Type-Token Ratio*) com janela deslizante de 25 palavras, eliminando viés pelo tamanho do texto.
      * `trunc_pausality`: Densidade de quebras estruturais (vírgulas, ponto e vírgula, dois-pontos, travessões).
      * `trunc_emotiveness`: Razão entre classes emotivas (adjetivos + advérbios) e substantivas (substantivos + verbos).
      * `trunc_upper_case_density`: Proporção de caracteres em caixa alta (indicativo de apelo sensacionalista).
-     * `trunc_verb_density`, `trunc_noun_density`, `trunc_adj_density`, `trunc_adv_density`, `trunc_pron_density`: Densidade morfossintática via POS-tagging com spaCy (`pt_core_news_lg`).
+     * `trunc_verb_density`, `trunc_noun_density`, `trunc_adj_density`, `trunc_adv_density`, `trunc_pron_density`: Densidade morfossintática via POS-tagging com spaCy 3.8.16 (`pt_core_news_lg`).
      * `rc_spelling_errors`: Proporção de palavras fora do léxico em português via `pyspellchecker`.
      * `rc_modal_verbs_density`: Verbos modais de certeza/probabilidade (*poder, dever, precisar, etc.*).
      * `rc_subj_imp_verbs_density`: Verbos no subjuntivo e imperativo.
@@ -75,7 +75,7 @@ O classificador não se apoia exclusivamente em palavras-chave contextuais, util
 ## 🚀 Guia de Reprodução e Execução Local
 
 ### Pré-requisitos
-* **Python 3.13.3 (64-bit)** (Recomendado para compatibilidade exata com o ambiente de treinamento e dependências de NLP/ML).
+* **Python 3.13.11 (64-bit)** (Recomendado para compatibilidade exata com o ambiente de treinamento e dependências de NLP/ML).
 * **Navegador Google Chrome** (ou navegadores baseados em Chromium com suporte a Manifest V3).
 
 ### 1. Configuração do Backend
@@ -132,21 +132,13 @@ cd backend
 .\.venv\Scripts\pytest -v
 ```
 
-### Resultados da Suíte de Testes (100% de Aprovação):
-* `tests/test_api.py::test_health_check` — Validação do status e metadados de versão da API.
-* `tests/test_api.py::test_analisar_noticia_sucesso_e_estrutura` — Validação de schema completo, persistência e métricas.
-* `tests/test_api.py::test_analisar_noticia_volume_insuficiente` — Garantia de rejeição (HTTP 400) para textos com menos de 30 palavras.
-* `tests/test_api.py::test_avaliar_noticia_sucesso` — Registro de votos da comunidade (0=Verdadeiro, 1=Duvidoso, 2=Falso).
-* `tests/test_api.py::test_avaliar_noticia_inexistente` — Retorno HTTP 404 para identificadores de notícia inexistentes.
-* `tests/test_pipeline.py::test_extracao_features_e_chaves` — Conferência das 15 chaves estilométricas geradas pelo spaCy.
-* `tests/test_pipeline.py::test_calcular_mattr_janela_deslizante` — Exatidão matemática do algoritmo MATTR (janela 25).
-* `tests/test_pipeline.py::test_inferencia_stacking_e_limiar` — Carregamento do artefato e cálculo de probabilidades dentro do intervalo $[0, 1]$.
-* `tests/test_pipeline.py::test_validacao_viabilidade_texto` — Regras de proteção contra textos curtos ou excessivamente longos.
-
-### Teste de Inferência Rápido (Script Standalone):
-```bash
-python tests/teste_inferencia.py
-```
+### Resultados da Suíte de Testes e CI (100% de Aprovação):
+* **CI GitHub Actions:** Garantia de integração contínua (alembic, testes estruturais e de integridade).
+* **`test_oof_protocol.py`:** Proteção absoluta contra vazamento de dados (*data leakage*) e garantia matemática de predições únicas no metamodelo Out-of-Fold (OOF).
+* **`test_model_failures.py`:** A API adota postura "falha fechada" (HTTP 503) em caso de adulteração de hiperparâmetros, corrupção do bundle, manifesto incompleto ou dimensões adulteradas de features.
+* **`test_model_integrity.py`:** Valida rigidamente o contrato do manifesto, assegurando F1-score estrito e estrutura idêntica para os vetores de treinamento.
+* **`test_parity_real.py`:** Validação que o modelo de treinamento e de produção operam *exatamente* sob o mesmo pipeline de extração de features, garantindo divergência numérica perto de zero (`atol=1e-5`).
+* **`test_api.py`:** Validação de comportamento da API REST (feedback da comunidade, proteção de volume insuficiente, retornos e rate limiting).
 
 ---
 
@@ -154,9 +146,9 @@ python tests/teste_inferencia.py
 
 O projeto foi desenhado sob as diretrizes de **Privacy by Design** e a Lei Geral de Proteção de Dados (Lei nº 13.709/2018):
 
-1. **Minimização de Dados (Art. 6º, III):**
+1. **Retenção de Dados:**
    * A extensão não realiza coleta passiva ou em segundo plano. O envio ocorre exclusivamente sob comando explícito do usuário (*"Ler e Analisar Notícia"*).
-   * O banco de dados em produção utiliza hashing criptográfico **SHA-256** para identificar artigos em cache, evitando a retenção permanente do texto bruto. O sistema armazena unicamente uma versão sanitizada e truncada (limite máximo de 500 palavras), estritamente necessária para reprodução iterativa das métricas e auditoria técnica do classificador.
+   * O sistema armazena o texto completo em banco para viabilizar auditorias analíticas posteriores, re-treinamento e registro dos votos de validação da comunidade, mas abstém-se de manter PIIs ou perfis rastreáveis.
 2. **Anonimização de Feedback (Art. 12):**
    * Os votos da comunidade utilizam um identificador aleatório de cliente (`X-Client-Id`), sem coleta de nomes, e-mails, endereços IP ou credenciais do usuário.
 3. **Limitação de Taxa (*Rate Limiting*):**
