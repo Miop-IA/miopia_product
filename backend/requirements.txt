@@ -12,13 +12,14 @@ alembic==1.13.3
 scikit-learn==1.9.1
 xgboost==2.1.1
 joblib==1.4.2
-numpy>=2.0.0
+numpy==2.5.3
+scipy==1.18.1
 pandas==2.2.3
 
 # Processamento de Linguagem Natural (NLP)
-spacy>=3.8.3
+spacy==3.8.16
 pyspellchecker==0.8.2
 nltk==3.9.1
 
-# Modelo spaCy pt_core_news_sm (download direto via release oficial)
-pt_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.8.0/pt_core_news_sm-3.8.0-py3-none-any.whl
+# Modelo spaCy pt_core_news_lg (download direto via release oficial)
+pt_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/pt_core_news_lg-3.8.0/pt_core_news_lg-3.8.0-py3-none-any.whl

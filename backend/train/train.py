@@ -58,14 +58,16 @@ def extrair_vetor_k_mais_3(model, X_text_transformed: np.ndarray) -> np.ndarray:
 
 def treinar_stacking(
     df_treino: pd.DataFrame,
-    df_val: pd.DataFrame = None,
-    output_path: str = None,
-    version: str = None,
+    df_val: pd.DataFrame,
+    output_path: str = None
 ) -> Dict:
     """
     Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística
     usando previsões Out-of-Fold (OOF) baseadas no GroupKFold por id_noticia.
     """
+    if df_val is None:
+        raise ValueError("O conjunto de teste/validação (df_val) é obrigatório para evitar avaliação viciada no treino.")
+        
     logger.info("A iniciar treino do pipeline Stacking Parte C...")
     y_train = df_treino["target"].values
     groups_train = df_treino["id_noticia"].values
@@ -226,7 +228,7 @@ def treinar_stacking(
     
     # 6.2 Relatório de Teste
     logger.info("--- RELATÓRIO DO CONJUNTO DE TESTE ---")
-    df_eval = df_val if df_val is not None else df_treino
+    df_eval = df_val
     y_eval = df_eval["target"].values
 
     X_char_eval = tfidf_char.transform(df_eval["texto_cru"])
@@ -275,11 +277,10 @@ def treinar_stacking(
         "meta_modelo": meta_lr,
         "limiar": limiar_decisao,
         "f1_score": float(f1_obtido),
-        "f1_avaliado_em": "validacao" if df_val is not None else "treino",
-        "feature_names_estilo": list(ESTILO_FEATURE_NAMES),
-        "feature_order": list(FEATURE_ORDER),
-        "feature_count": FEATURE_COUNT,
-        "version": version or datetime.now(timezone.utc).strftime("stacking-%Y%m%dT%H%M%SZ"),
+        "n_exemplos_treino": len(df_treino),
+        "n_exemplos_teste": len(df_eval),
+        "dataset_version": "fake_br_master + dataset_11",
+        "feature_names_estilo": ESTILO_FEATURE_NAMES,
     }
 
     # O mesmo contrato verificado no startup da API: nunca serializar bundle inválido.

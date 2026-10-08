@@ -127,7 +127,9 @@ def obter_bundle_ou_503():
 @app.get("/health", tags=["Monitoramento"])
 def health_check():
     """Retorna sucesso caso a API esteja operando."""
-    return {"status": "online", "environment": settings.environment, "model": "Stacking Parte C (F1=0.961)"}
+    model_info = get_current_model_info()
+    f1_str = f" (F1={model_info['f1']:.3f})" if model_info.get("f1") else ""
+    return {"status": "online", "environment": settings.environment, "model": f"Stacking Parte C{f1_str}"}
 
 
 @app.get("/ready", tags=["Monitoramento"])
@@ -230,14 +232,15 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         )
 
     # 2. Processamento de texto inédito
-    features, textos = extrair_pacote_analise(texto_puro)
+    features, textos = extrair_pacote_analise(texto_puro, num_links_param=payload.num_links)
+    
     try:
         prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
-    except ModeloInvalidoError as e:
-        logger.error(f"Inferência recusada, modelo inválido: {e}")
+    except (FileNotFoundError, RuntimeError) as e:
+        logger.error(f"Erro na inferência: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Modelo de classificação indisponível.",
+            detail="Serviço de inferência indisponível. O modelo não está carregado."
         )
 
     texto_trunc = textos.get("texto_cru", texto_puro)

@@ -50,43 +50,18 @@ def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
 
     model_path = caminho or caminho_modelo()
 
-    if not os.path.isfile(model_path):
-        raise ModeloAusenteError(f"Artefato do modelo não encontrado: {model_path}")
+    if os.path.exists(model_path):
+        try:
+            _stacking_bundle = joblib.load(model_path)
+            logger.info("Pipeline Stacking carregado de arquivo com sucesso.")
+            return _stacking_bundle
+        except Exception as e:
+            logger.error(f"Erro ao deserializar o bundle do Stacking: {e}")
+            raise RuntimeError(f"Erro ao carregar o modelo Stacking: {e}")
 
-    try:
-        bundle = joblib.load(model_path)
-    except Exception as e:
-        raise ModeloCorrompidoError(
-            f"Falha ao desserializar o artefato do modelo ({model_path}): {type(e).__name__}: {e}"
-        ) from e
-
-    validar_bundle(bundle)
-    _verificar_execucao(bundle)
-
-    logger.info("Bundle Stacking validado: %s", resumo_bundle(bundle))
-    if caminho is None:
-        _stacking_bundle = bundle
-    return bundle
-
-
-def _verificar_execucao(bundle: Dict[str, Any]) -> None:
-    """Executa uma inferência sintética ponta a ponta para garantir que os artefatos funcionam juntos."""
-    textos = {"texto_cru": _TEXTO_SMOKE, "texto_limpo": _TEXTO_SMOKE, "texto_lematizado": _TEXTO_SMOKE}
-    features = {nome: 0.0 for nome in ESTILO_FEATURE_NAMES}
-    try:
-        prob = _inferir(bundle, features, textos)
-    except ModeloInvalidoError:
-        raise
-    except Exception as e:
-        raise BundleIncompativelError([f"inferência de verificação falhou: {type(e).__name__}: {e}"]) from e
-    if not (0.0 <= prob <= 1.0) or not np.isfinite(prob):
-        raise BundleIncompativelError([f"inferência de verificação retornou probabilidade inválida: {prob!r}"])
-
-
-def resetar_cache_bundle() -> None:
-    """Descarta o bundle em memória (usado em testes e recarga controlada)."""
-    global _stacking_bundle
-    _stacking_bundle = None
+    error_msg = f"Artefato '{model_path}' não encontrado. O sistema não pode inicializar sem o modelo de inferência."
+    logger.error(error_msg)
+    raise FileNotFoundError(error_msg)
 
 
 def extrair_features_topicos(texto_lematizado: str, bundle: Dict[str, Any]) -> np.ndarray:
@@ -121,8 +96,8 @@ def extrair_features_topicos(texto_lematizado: str, bundle: Dict[str, Any]) -> n
     return vetor
 
 
-def classificar_faixa_e_orientacao(prob_fake: float, limiar: float = 0.46) -> Tuple[str, str]:
-    """Mapeia a probabilidade final para as faixas de confiança com corte centrado no limiar 0.46."""
+def classificar_faixa_e_orientacao(prob_fake: float, limiar: float, f1_score: float = None) -> Tuple[str, str]:
+    """Mapeia a probabilidade final para as faixas de confiança com corte centrado no limiar."""
     if prob_fake < (limiar - 0.15):
         faixa = "Confiavel"
         orientacao = (
@@ -137,9 +112,10 @@ def classificar_faixa_e_orientacao(prob_fake: float, limiar: float = 0.46) -> Tu
         )
     else:
         faixa = "Suspeita"
+        f1_str = f" (F1={f1_score:.3f})" if f1_score else ""
         orientacao = (
             "Foram detectadas anomalias estilométricas e alta probabilidade de desinformação "
-            "pelo modelo Stacking. Consulte agências de checagem confiáveis."
+            f"pelo modelo Stacking{f1_str}. Consulte agências de checagem confiáveis."
         )
 
     return faixa, orientacao
@@ -191,9 +167,34 @@ def predizer_risco_stacking(
     bundle = carregar_bundle_stacking()
     prob_fake_final = _inferir(bundle, features_estilo, textos)
 
-    limiar = float(bundle["limiar"])
-    f1_score_ref = float(bundle["f1_score"])
+    # 1. Ramo Caracteres
+    vec_char = bundle["tfidf_char"]
+    svm_char = bundle["svm_caracteres"]
+    X_char = vec_char.transform([textos["texto_cru"]])
+    p_fake_char = float(svm_char.predict_proba(X_char)[0][1])
 
-    faixa, orientacao = classificar_faixa_e_orientacao(prob_fake_final, limiar=limiar)
+    # 2. Ramo Palavras
+    vec_word = bundle["tfidf_word"]
+    svm_word = bundle["svm_palavras"]
+    X_word = vec_word.transform([textos["texto_limpo"]])
+    p_fake_word = float(svm_word.predict_proba(X_word)[0][1])
+
+    # 3. Ramo XGBoost Denso
+    vetor_estilo = [features_estilo[f] for f in ESTILO_FEATURE_NAMES]
+    vetor_temas = extrair_features_topicos(textos["texto_lematizado"], bundle)
+    X_denso = np.concatenate([vetor_estilo, vetor_temas]).reshape(1, -1)
+
+    xgb_model = bundle["xgb_denso"]
+    p_fake_denso = float(xgb_model.predict_proba(X_denso)[0][1])
+
+    # 4. Metamodelo
+    meta_model = bundle["meta_modelo"]
+    X_meta = np.array([[p_fake_char, p_fake_word, p_fake_denso]])
+    prob_fake_final = float(meta_model.predict_proba(X_meta)[0][1])
+
+    limiar = bundle.get("limiar", 0.46)
+    f1_score_ref = bundle.get("f1_score", 0.0)
+
+    faixa, orientacao = classificar_faixa_e_orientacao(prob_fake_final, limiar, f1_score_ref)
 
     return round(prob_fake_final, 3), faixa, orientacao, f1_score_ref

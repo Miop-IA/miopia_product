@@ -3,7 +3,7 @@
 O **Miop.IA** é uma solução para análise de credibilidade e detecção de padrões de desinformação em notícias escritas em Língua Portuguesa. O sistema é composto por:
 1. **Extensão para Google Chrome (Manifest V3):** Interface client-side para extração contextual do corpo da matéria e exibição do diagnóstico.
 2. **API Backend em Python (FastAPI):** Servidor ASGI assíncrono para validação textual, extração de features, inferência em cache $O(1)$ e registro de feedback comunitário.
-3. **Pipeline de Machine Learning (Stacking Ensemble Multivisão):** Classificador ensemble híbrido combinando estilometria avançada (MATTR, POS tags, ortografia), modelagem temática (LDA e NMF), $n$-gramas em nível de caractere/palavra e metamodelo supervisionado ($F_1 = 0{,}961$).
+3. **Pipeline de Machine Learning (Stacking Ensemble Multivisão):** Classificador ensemble híbrido combinando estilometria avançada (MATTR, POS tags, ortografia), modelagem temática (LDA e NMF), $n$-gramas em nível de caractere/palavra e metamodelo supervisionado (F1 aferido no manifesto).
 
 ---
 
@@ -58,14 +58,14 @@ O classificador não se apoia exclusivamente em palavras-chave contextuais, util
      * `trunc_pausality`: Densidade de quebras estruturais (vírgulas, ponto e vírgula, dois-pontos, travessões).
      * `trunc_emotiveness`: Razão entre classes emotivas (adjetivos + advérbios) e substantivas (substantivos + verbos).
      * `trunc_upper_case_density`: Proporção de caracteres em caixa alta (indicativo de apelo sensacionalista).
-     * `trunc_verb_density`, `trunc_noun_density`, `trunc_adj_density`, `trunc_adv_density`, `trunc_pron_density`: Densidade morfossintática via POS-tagging com spaCy (`pt_core_news_sm`).
+     * `trunc_verb_density`, `trunc_noun_density`, `trunc_adj_density`, `trunc_adv_density`, `trunc_pron_density`: Densidade morfossintática via POS-tagging com spaCy (`pt_core_news_lg`).
      * `rc_spelling_errors`: Proporção de palavras fora do léxico em português via `pyspellchecker`.
      * `rc_modal_verbs_density`: Verbos modais de certeza/probabilidade (*poder, dever, precisar, etc.*).
      * `rc_subj_imp_verbs_density`: Verbos no subjuntivo e imperativo.
      * `rc_pron_1_2_sing_density` e `rc_pron_1_plur_density`: Densidade de pronomes pessoais e possessivos de 1ª/2ª pessoa do singular e plural.
    * **Modelagem Temática ($k=8$ e $k=30$):** Distribuição suave de tópicos por LDA (*Latent Dirichlet Allocation*) e NMF (*Non-Negative Matrix Factorization*), entropia e valores máximos de ativação.
 4. **Metamodelo e Faixas de Decisão:**
-   * Regressão Logística calibrada com limiar ótimo de **$0{,}46$** ($F_1 = 0{,}961$).
+   * Regressão Logística com limiar e score F1 calibrados dinamicamente via manifesto.
    * **Confiável:** Probabilidade $< 0{,}31$ (padrões textuais compatíveis com jornalismo profissional).
    * **Atenção:** $0{,}31 \le \text{Prob} \le 0{,}61$ (traços híbridos ou subjetividade elevada).
    * **Suspeita:** Probabilidade $> 0{,}61$ (anomalias estilométricas e alta probabilidade de desinformação).
@@ -75,7 +75,7 @@ O classificador não se apoia exclusivamente em palavras-chave contextuais, util
 ## 🚀 Guia de Reprodução e Execução Local
 
 ### Pré-requisitos
-* **Python 3.12 (64-bit)** (Recomendado para compatibilidade binária nativa com spaCy, scikit-learn e NumPy).
+* **Python 3.13.3 (64-bit)** (Recomendado para compatibilidade exata com o ambiente de treinamento e dependências de NLP/ML).
 * **Navegador Google Chrome** (ou navegadores baseados em Chromium com suporte a Manifest V3).
 
 ### 1. Configuração do Backend

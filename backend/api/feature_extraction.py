@@ -7,15 +7,13 @@ from spellchecker import SpellChecker
 logger = logging.getLogger(__name__)
 
 def _load_spacy_model():
-    models_to_try = ["pt_core_news_sm", "pt_core_news_md", "pt_core_news_lg"]
-    for model_name in models_to_try:
-        try:
-            loaded_nlp = spacy.load(model_name, disable=["ner"])
-            logger.info(f"Modelo SpaCy carregado: {model_name}")
-            return loaded_nlp
-        except OSError:
-            continue
-    raise RuntimeError("Instale o modelo SpaCy: python -m spacy download pt_core_news_sm")
+    model_name = "pt_core_news_lg"
+    try:
+        loaded_nlp = spacy.load(model_name, disable=["ner"])
+        logger.info(f"Modelo SpaCy Oficial carregado e fixado: {model_name}")
+        return loaded_nlp
+    except OSError:
+        raise RuntimeError(f"Instale o modelo SpaCy oficial do projeto: python -m spacy download {model_name}")
 
 nlp = _load_spacy_model()
 spell = SpellChecker(language="pt")
