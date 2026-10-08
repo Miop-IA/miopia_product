@@ -308,7 +308,7 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
     
     import sys
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from api.feature_extraction import preparar_texto_comum
+    from api.feature_extraction import preparar_texto_comum, recalcular_spelling_errors_texto
 
     logger.info("Aplicando processamento e truncamento padronizado (unificado com API) aos textos do dataset...")
     def _aplicar_preparacao(row):
@@ -326,13 +326,15 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
         df_unificado["texto_lematizado"] = df_unificado["texto_limpo"]
 
     renames = {
-        'percentage_of_news_with_spelling_errors': 'rc_spelling_errors',
         'number_of_modal_verbs_density': 'rc_modal_verbs_density',
         'number_of_subjuntive_and_imperative_verbs_density': 'rc_subj_imp_verbs_density',
         'number_of_singular_first_and_second_personal_pronouns_density': 'rc_pron_1_2_sing_density',
         'number_of_plural_first_personal_pronouns_density': 'rc_pron_1_plur_density',
     }
     df_unificado.rename(columns=renames, inplace=True)
+    
+    logger.info("Recalculando rc_spelling_errors unificado...")
+    df_unificado["rc_spelling_errors"] = df_unificado["texto_limpo"].apply(recalcular_spelling_errors_texto)
 
     return df_unificado
 

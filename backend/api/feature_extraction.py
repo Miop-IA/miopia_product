@@ -72,6 +72,27 @@ def calcular_mattr(lemas: List[str], window_size: int = 25) -> float:
 
     return float(sum(ttrs) / len(ttrs))
 
+def calcular_rc_spelling_errors(spell_candidates: List[str], num_words: int) -> float:
+    """
+    Calcula matematicamente a proporção de ocorrências de erros ortográficos 
+    pelo total de palavras válidas, garantindo que não há mistura entre tipos e ocorrências.
+    """
+    if not spell_candidates or num_words <= 0:
+        return 0.0
+    erros_unicos = spell.unknown(list(set(spell_candidates)))
+    qtd_erros = sum(1 for word in spell_candidates if word in erros_unicos)
+    return float(qtd_erros / num_words)
+
+def recalcular_spelling_errors_texto(texto_limpo: str) -> float:
+    """Helper usado para reprocessar o dataframe de treino com o algoritmo unificado."""
+    if not isinstance(texto_limpo, str) or not texto_limpo.strip():
+        return 0.0
+    doc = nlp(texto_limpo)
+    tokens_palavras = [t for t in doc if not t.is_space and t.is_alpha]
+    num_words = max(len(tokens_palavras), 1)
+    spell_candidates = [t.text for t in tokens_palavras if t.is_lower and len(t.text) > 2 and t.pos_ != "PROPN"]
+    return calcular_rc_spelling_errors(spell_candidates, num_words)
+
 
 def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500, num_links_param: Optional[int] = None) -> Tuple[str, str, int]:
     """
@@ -183,11 +204,7 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500, num_links_pa
         if t.is_lower and len(t.text) > 2 and pos != "PROPN":
             spell_candidates.append(t.text)
 
-    rc_spelling_errors = 0.0
-    if spell_candidates:
-        erros_unicos = spell.unknown(list(set(spell_candidates)))
-        qtd_erros = sum(1 for word in spell_candidates if word in erros_unicos)
-        rc_spelling_errors = qtd_erros / len(spell_candidates)
+    rc_spelling_errors = calcular_rc_spelling_errors(spell_candidates, num_words)
 
     emotiveness_den = pos_counts["NOUN"] + pos_counts["VERB"]
     trunc_emotiveness = (pos_counts["ADJ"] + pos_counts["ADV"]) / emotiveness_den if emotiveness_den > 0 else 0.0

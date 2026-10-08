@@ -87,18 +87,26 @@ def test_paridade_preprocessing_treino_producao():
 
 def test_link_density_com_num_links_payload():
     """Verifica se o backend aceita e prioriza o num_links vindo do payload (DOM) na hora de calcular link_density."""
-    from fastapi.testclient import TestClient
-    from api.main import app
-    client = TestClient(app)
-    
     texto_sem_link_literal = "Este é um texto gigante sem nenhuma url literal escrita, mas que no HTML tem links reais. " * 20
     
     # Se não enviar num_links, a link_density deve ser 0 (pois não há http/www escrito)
-    response_sem = client.post("/analisar", json={"texto": texto_sem_link_literal})
-    assert response_sem.status_code == 200
-    assert response_sem.json()["features"]["link_density"] == 0.0
+    features_sem, _ = extrair_pacote_analise(texto_sem_link_literal)
+    assert features_sem["link_density"] == 0.0
     
     # Se enviar num_links=5, a link_density deve ser > 0 (usa o valor exato do DOM)
-    response_com = client.post("/analisar", json={"texto": texto_sem_link_literal, "num_links": 5})
-    assert response_com.status_code == 200
-    assert response_com.json()["features"]["link_density"] > 0.0
+    features_com, _ = extrair_pacote_analise(texto_sem_link_literal, num_links_param=5)
+    assert features_com["link_density"] > 0.0
+
+
+def test_rc_spelling_errors_repete_palavra():
+    """Valida se a métrica calcula corretamente a ocorrência de erros quando há repetição (sem misturar com tipos)."""
+    # 4 palavras válidas no total (caxorrrro e serto são erros)
+    # caxorrrro aparece 2 vezes
+    # serto aparece 1 vez
+    # correto aparece 1 vez
+    # Total de palavras = 4
+    # Total de erros (ocorrências) = 3 (caxorrrro, caxorrrro, serto)
+    # rc_spelling_errors = 3 / 4 = 0.75
+    texto = "caxorrrro caxorrrro serto correto"
+    features, _ = extrair_pacote_analise(texto)
+    assert features["rc_spelling_errors"] == 0.75
