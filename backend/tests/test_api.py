@@ -146,7 +146,10 @@ def test_avaliar_comunidade_ciclo_completo():
 def test_cache_invalidation_by_version(monkeypatch):
     """Garante que a mudança de versão do modelo não reutiliza o cache."""
     # 1. Simula versão antiga
-    monkeypatch.setattr("api.main.get_current_versions", lambda: ("v1.0", "1.0"))
+    monkeypatch.setattr("api.main.get_current_model_info", lambda: {
+        "model_version": "v1.0", "pipeline_version": "1.0",
+        "dataset_version": "test", "f1": 0.90, "threshold": 0.5
+    })
     payload = {"texto": TEXTO_VALIDO_LONGO, "url": ""}
     resp1 = client.post("/analisar", json=payload)
     assert resp1.status_code == 200
@@ -157,7 +160,10 @@ def test_cache_invalidation_by_version(monkeypatch):
     assert resp2.json()["id"] == id1
 
     # 3. Muda a versão do modelo (v2.0) e do pipeline (2.0)
-    monkeypatch.setattr("api.main.get_current_versions", lambda: ("v2.0", "2.0"))
+    monkeypatch.setattr("api.main.get_current_model_info", lambda: {
+        "model_version": "v2.0", "pipeline_version": "2.0",
+        "dataset_version": "test", "f1": 0.90, "threshold": 0.5
+    })
     resp3 = client.post("/analisar", json=payload)
     assert resp3.status_code == 200
     id3 = resp3.json()["id"]

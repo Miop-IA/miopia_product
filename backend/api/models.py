@@ -5,6 +5,24 @@ from api.database import Base
 
 
 
+class Modelo(Base):
+    __tablename__ = "modelos"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    model_version = Column(String(50), nullable=False)
+    pipeline_version = Column(String(50), nullable=False)
+    dataset_version = Column(String(100), nullable=False)
+    f1 = Column(Float, nullable=False)
+    threshold = Column(Float, nullable=False)
+    
+    criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('model_version', 'pipeline_version', name='_model_pipeline_uc'),
+    )
+
+    noticias = relationship("Noticia", back_populates="modelo")
+
 class Noticia(Base):
     __tablename__ = "noticias"
 
@@ -13,14 +31,11 @@ class Noticia(Base):
     url = Column(String(500), nullable=True)
     texto = Column(Text, nullable=False)
     texto_truncado = Column(Text, nullable=True)
-    
-    model_version = Column(String(50), nullable=False, default="unknown")
-    pipeline_version = Column(String(50), nullable=False, default="unknown")
+    modelo_id = Column(Integer, ForeignKey("modelos.id"), nullable=False)
     
     # Métricas preditivas
     prob_suspeita = Column(Float, nullable=False)
     faixa = Column(String(30), nullable=False)
-    modelo_f1 = Column(Float, default=0.961)
 
     # 15 Características Estilométricas (com MATTR-25 em trunc_diversity)
     trunc_pausality = Column(Float, nullable=False)
@@ -41,8 +56,10 @@ class Noticia(Base):
 
     criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    modelo = relationship("Modelo", back_populates="noticias")
+
     __table_args__ = (
-        UniqueConstraint('hash_texto', 'model_version', 'pipeline_version', name='_hash_model_pipeline_uc'),
+        UniqueConstraint('hash_texto', 'modelo_id', name='_hash_modelo_uc'),
     )
 
     # Relacionamento com as avaliações da comunidade
