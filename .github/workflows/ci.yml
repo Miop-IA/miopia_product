@@ -43,14 +43,14 @@ jobs:
 
     - name: Validações de Estrutura (Alembic)
       env:
-        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname?sslmode=disable"
       run: |
         cd backend
         alembic upgrade head
 
     - name: Run Pytest
       env:
-        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname?sslmode=disable"
       run: |
         cd backend
         pytest -v
@@ -62,7 +62,7 @@ jobs:
 
     - name: Validação E2E (Sistema Real na Rede)
       env:
-        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname?sslmode=disable"
       run: |
         cd backend
         uvicorn api.main:app --host 0.0.0.0 --port 8000 &
