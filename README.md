@@ -58,7 +58,7 @@ O classificador não se apoia exclusivamente em palavras-chave contextuais, util
      * `trunc_pausality`: Densidade de quebras estruturais (vírgulas, ponto e vírgula, dois-pontos, travessões).
      * `trunc_emotiveness`: Razão entre classes emotivas (adjetivos + advérbios) e substantivas (substantivos + verbos).
      * `trunc_upper_case_density`: Proporção de caracteres em caixa alta (indicativo de apelo sensacionalista).
-     * `trunc_verb_density`, `trunc_noun_density`, `trunc_adj_density`, `trunc_adv_density`, `trunc_pron_density`: Densidade morfossintática via POS-tagging com spaCy (`pt_core_news_sm`).
+     * `trunc_verb_density`, `trunc_noun_density`, `trunc_adj_density`, `trunc_adv_density`, `trunc_pron_density`: Densidade morfossintática via POS-tagging com spaCy (`pt_core_news_lg`).
      * `rc_spelling_errors`: Proporção de palavras fora do léxico em português via `pyspellchecker`.
      * `rc_modal_verbs_density`: Verbos modais de certeza/probabilidade (*poder, dever, precisar, etc.*).
      * `rc_subj_imp_verbs_density`: Verbos no subjuntivo e imperativo.
