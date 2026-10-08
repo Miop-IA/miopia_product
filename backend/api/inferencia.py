@@ -7,23 +7,7 @@ import joblib
 
 logger = logging.getLogger(__name__)
 
-ESTILO_FEATURE_NAMES = [
-    "trunc_pausality",
-    "trunc_emotiveness",
-    "trunc_diversity",
-    "trunc_upper_case_density",
-    "trunc_verb_density",
-    "trunc_noun_density",
-    "trunc_adj_density",
-    "trunc_adv_density",
-    "trunc_pron_density",
-    "link_density",
-    "rc_spelling_errors",
-    "rc_modal_verbs_density",
-    "rc_subj_imp_verbs_density",
-    "rc_pron_1_2_sing_density",
-    "rc_pron_1_plur_density",
-]
+from .feature_contract import ESTILO_FEATURE_NAMES
 
 _stacking_bundle = None
 

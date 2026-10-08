@@ -21,24 +21,10 @@ from xgboost import XGBClassifier
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("train_stacking")
 
-# 15 características estilométricas
-ESTILO_FEATURE_NAMES = [
-    "trunc_pausality",
-    "trunc_emotiveness",
-    "trunc_diversity",  # MATTR com janela de 25 palavras
-    "trunc_upper_case_density",
-    "trunc_verb_density",
-    "trunc_noun_density",
-    "trunc_adj_density",
-    "trunc_adv_density",
-    "trunc_pron_density",
-    "link_density",
-    "rc_spelling_errors",
-    "rc_modal_verbs_density",
-    "rc_subj_imp_verbs_density",
-    "rc_pron_1_2_sing_density",
-    "rc_pron_1_plur_density",
-]
+# 15 características estilométricas definidas via Contrato Oficial Unificado
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from api.feature_contract import ESTILO_FEATURE_NAMES
 
 
 def extrair_vetor_k_mais_3(model, X_text_transformed: np.ndarray) -> np.ndarray:
@@ -320,27 +306,31 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
         suffixes=("_11", "_master")
     )
     
-    # Criar colunas esperadas pelo pipeline de ML
-    if "texto_bert" in df_unificado.columns:
-        df_unificado["texto_cru"] = df_unificado["texto_bert"]
-        df_unificado["texto_limpo"] = df_unificado["texto_bert"].astype(str).str.lower()
-    elif "texto_truncado" in df_unificado.columns:
-        df_unificado["texto_cru"] = df_unificado["texto_truncado"]
-        df_unificado["texto_limpo"] = df_unificado["texto_truncado"].astype(str).str.lower()
-        
-    if "texto_tfidf" in df_unificado.columns:
-        df_unificado["texto_lematizado"] = df_unificado["texto_tfidf"]
-    else:
-        df_unificado["texto_lematizado"] = df_unificado["texto_limpo"]
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from api.feature_extraction import extrair_pacote_analise
+    from api.feature_contract import ESTILO_FEATURE_NAMES
 
-    renames = {
-        'percentage_of_news_with_spelling_errors': 'rc_spelling_errors',
-        'number_of_modal_verbs_density': 'rc_modal_verbs_density',
-        'number_of_subjuntive_and_imperative_verbs_density': 'rc_subj_imp_verbs_density',
-        'number_of_singular_first_and_second_personal_pronouns_density': 'rc_pron_1_2_sing_density',
-        'number_of_plural_first_personal_pronouns_density': 'rc_pron_1_plur_density',
-    }
-    df_unificado.rename(columns=renames, inplace=True)
+    logger.info("Recalculando TODAS as features estilométricas usando as regras unificadas de produção...")
+    def _aplicar_tudo(row):
+        texto_original = row.get("texto_bert")
+        if pd.isna(texto_original) or not texto_original:
+            texto_original = row.get("texto_truncado", "")
+        
+        features_dict, representacoes = extrair_pacote_analise(str(texto_original), max_tokens=500)
+        
+        out = {
+            "texto_cru": representacoes["texto_cru"],
+            "texto_limpo": representacoes["texto_limpo"],
+            "texto_lematizado": representacoes["texto_lematizado"]
+        }
+        for feat in ESTILO_FEATURE_NAMES:
+            out[feat] = features_dict[feat]
+            
+        return pd.Series(out)
+
+    cols = ["texto_cru", "texto_limpo", "texto_lematizado"] + ESTILO_FEATURE_NAMES
+    df_unificado[cols] = df_unificado.apply(_aplicar_tudo, axis=1)
 
     return df_unificado
 
