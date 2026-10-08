@@ -158,7 +158,8 @@ function extractNewsContent() {
           text: rescueResult.text,
           words: rescueResult.words,
           paragraphs: rescueResult.paragraphs,
-          method: "readability_rescue"
+          method: "readability_rescue",
+          num_links: readableRescue.container.querySelectorAll('a[href]').length
         };
       }
     }
@@ -169,7 +170,8 @@ function extractNewsContent() {
     text: result.text,
     words: result.words,
     paragraphs: result.paragraphs,
-    method: extractionMethod
+    method: extractionMethod,
+    num_links: targetContainer ? targetContainer.querySelectorAll('a[href]').length : 0
   };
 }
 

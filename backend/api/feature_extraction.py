@@ -94,10 +94,7 @@ def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500, num_links_para
     texto_sanitizado = sanitizar_texto_noticia(texto_bruto)
 
     palavras_cruas = texto_sanitizado.split()
-    if len(palavras_cruas) > max_tokens:
-        texto_cru_trunc = " ".join(palavras_cruas[:max_tokens])
-    else:
-        texto_cru_trunc = texto_sanitizado
+    texto_cru_trunc = " ".join(palavras_cruas[:max_tokens])
 
     if num_links_param is not None:
         num_links = num_links_param

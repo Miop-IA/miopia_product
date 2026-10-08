@@ -58,7 +58,8 @@ document.getElementById("btnRead").addEventListener("click", async () => {
       body: JSON.stringify({
         url: tab.url || "",
         texto: rawText,
-        text: rawText
+        text: rawText,
+        num_links: response.num_links || 0
       })
     });
 

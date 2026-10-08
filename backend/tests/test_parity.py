@@ -5,7 +5,7 @@ from api.feature_extraction import extrair_pacote_analise
 from api.inferencia import predizer_risco_stacking
 import numpy as np
 
-client = TestClient(app)
+from tests.test_api import client, setup_database
 
 # Gerador de 20 textos fixos variados para o teste de paridade
 TEXTOS_FIXOS = [
