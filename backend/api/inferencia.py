@@ -42,7 +42,7 @@ def carregar_bundle_stacking():
         return _stacking_bundle
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    model_path = os.path.join(base_dir, "models", "stacking_miopia_0961.joblib")
+    model_path = os.path.join(base_dir, "models", "stacking_miopia_v1.joblib")
 
     if os.path.exists(model_path):
         try:
@@ -52,7 +52,7 @@ def carregar_bundle_stacking():
         except Exception as e:
             logger.error(f"Erro ao deserializar o bundle do Stacking: {e}")
 
-    logger.warning("Artefato 'stacking_miopia_0961.joblib' não encontrado. Inicializando fallback local em memória.")
+    logger.warning("Artefato 'stacking_miopia_v1.joblib' não encontrado. Inicializando fallback local em memória.")
     _stacking_bundle = _criar_baseline_stacking()
     return _stacking_bundle
 
