@@ -484,7 +484,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Treina o bundle Stacking Miop.IA.")
     parser.add_argument("--dados-dir", default=os.path.join(_BACKEND_DIR, "api", "data"),
                         help="Pasta com dataset_11.csv e fake_br_master.csv")
-    parser.add_argument("--saida", default=os.path.join(_BACKEND_DIR, "models", "stacking_miopia_v1.joblib"))
+    parser.add_argument("--saida", default=os.path.join(_BACKEND_DIR, "models", "stacking_miopia_v2.joblib"))
     parser.add_argument("--versao", default=None, help="Identificador de versão gravado no bundle")
     args = parser.parse_args()
 
