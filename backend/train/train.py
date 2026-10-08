@@ -258,6 +258,13 @@ def treinar_stacking(
     
     logger.info(f"F1-Score Teste (limiar {limiar_decisao}): {f1_obtido:.4f}")
     logger.info("\n" + classification_report(y_eval, y_pred, target_names=["Verdadeiro", "Falso"]))
+    
+    # Validação Metodológica Absoluta
+    F1_MINIMO = 0.85
+    if f1_obtido < F1_MINIMO:
+        erro_msg = f"Treinamento abortado: F1-Score obtido ({f1_obtido:.4f}) está abaixo do mínimo exigido ({F1_MINIMO}). O modelo não será empacotado."
+        logger.error(erro_msg)
+        raise RuntimeError(erro_msg)
 
     # -------------------------------------------------------------
     # 7. Empacotamento do Bundle de Produção
