@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from api.database import Base, get_db
 from api.main import app
+from api.inferencia import carregar_bundle_stacking
 
 # Configuração de banco de dados SQLite em memória isolado para os testes
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
