@@ -2,9 +2,9 @@ name: CI Backend
 
 on:
   push:
-    branches: [ "main", "feature/*" ]
+    branches: [ "main", "dev", "feature/*" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
 jobs:
   test:
@@ -34,12 +34,22 @@ jobs:
       with:
         python-version: "3.13"
         
-    - name: Install dependencies
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Python dependencies
       run: |
         cd backend
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-asyncio httpx
+
+    - name: Install Node dependencies
+      run: |
+        cd frontend/benchmark
+        npm install
 
     - name: Validações de Estrutura (Alembic)
       env:
@@ -55,6 +65,11 @@ jobs:
         cd backend
         pytest -v
 
+    - name: Run Benchmark da Extensão
+      run: |
+        cd frontend/benchmark
+        npm run benchmark
+
     - name: Validação de Conjunto (Modelo + Manifesto + Readiness)
       run: |
         cd backend
@@ -66,15 +81,31 @@ jobs:
       run: |
         cd backend
         uvicorn api.main:app --host 0.0.0.0 --port 8000 &
-        # Aguarda a API estar online e aceitando conexões (polling no /health)
+        
+        API_UP=0
         for i in {1..30}; do
           if curl -s http://localhost:8000/health | grep -q "online"; then
             echo "API online e pronta para testes E2E!"
+            API_UP=1
             break
           fi
           echo "Aguardando inicialização da API ($i/30)..."
           sleep 1
         done
+
+        if [ "$API_UP" -eq 0 ]; then
+          echo "Erro: API não inicializou a tempo."
+          exit 1
+        fi
+
+        # Check /ready
+        READY_STATUS=$(curl -s http://localhost:8000/ready)
+        if echo "$READY_STATUS" | grep -q '"status":"ready"'; then
+          echo "API /ready OK!"
+        else
+          echo "Erro: API /ready falhou retornando $READY_STATUS"
+          exit 1
+        fi
 
         # POST /analisar
         RESPONSE=$(curl -s -S --fail-with-body -X POST http://localhost:8000/analisar \
