@@ -13,6 +13,8 @@ from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, f1_score
+from sklearn.model_selection import GroupShuffleSplit, GroupKFold
+from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 # Configuração de logging
@@ -71,108 +73,147 @@ def treinar_stacking(
     output_path: str = None
 ) -> Dict:
     """
-    Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística.
+    Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística
+    usando previsões Out-of-Fold (OOF) baseadas no GroupKFold por id_noticia.
     """
     logger.info("A iniciar treino do pipeline Stacking Parte C...")
-
     y_train = df_treino["target"].values
+    groups_train = df_treino["id_noticia"].values
 
     # -------------------------------------------------------------
-    # 1. Ramo SVM Caracteres (TF-IDF de n-gramas 3 a 5 no texto cru)
+    # 0. Geração de Predições Out-of-Fold (OOF)
     # -------------------------------------------------------------
-    logger.info("A treinar TF-IDF de Caracteres (3 a 5) + LinearSVC...")
-    tfidf_char = TfidfVectorizer(
-        analyzer="char",
-        ngram_range=(3, 5),
-        min_df=5,
-        max_features=50000,
-        sublinear_tf=True
-    )
-    X_char_train = tfidf_char.fit_transform(df_treino["texto_cru"])
+    logger.info("Gerando predições OOF com GroupKFold (5 splits)...")
+    gkf = GroupKFold(n_splits=5)
     
+    p_char_oof = np.zeros(len(df_treino))
+    p_word_oof = np.zeros(len(df_treino))
+    p_denso_oof = np.zeros(len(df_treino))
+
+    for fold, (train_idx, val_idx) in enumerate(gkf.split(df_treino, y_train, groups=groups_train)):
+        logger.info(f"Processando fold {fold + 1}/5...")
+        df_fold_train = df_treino.iloc[train_idx]
+        df_fold_val = df_treino.iloc[val_idx]
+        y_fold_train = y_train[train_idx]
+        
+        # Char
+        tfidf_char_fold = TfidfVectorizer(analyzer="char", ngram_range=(3, 5), min_df=5, max_features=50000, sublinear_tf=True)
+        X_char_fold_train = tfidf_char_fold.fit_transform(df_fold_train["texto_cru"])
+        X_char_fold_val = tfidf_char_fold.transform(df_fold_val["texto_cru"])
+        # Usa GroupKFold com 3 splits para calibração interna respeitando id_noticia
+        cv_char_fold = list(GroupKFold(n_splits=3).split(X_char_fold_train, y_fold_train, groups=df_fold_train["id_noticia"]))
+        svm_char_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=cv_char_fold)
+        svm_char_fold.fit(X_char_fold_train, y_fold_train)
+        p_char_oof[val_idx] = svm_char_fold.predict_proba(X_char_fold_val)[:, 1]
+        
+        # Word
+        tfidf_word_fold = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=30000, sublinear_tf=True)
+        X_word_fold_train = tfidf_word_fold.fit_transform(df_fold_train["texto_limpo"])
+        X_word_fold_val = tfidf_word_fold.transform(df_fold_val["texto_limpo"])
+        # Usa GroupKFold com 3 splits para calibração interna respeitando id_noticia
+        cv_word_fold = list(GroupKFold(n_splits=3).split(X_word_fold_train, y_fold_train, groups=df_fold_train["id_noticia"]))
+        svm_word_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=cv_word_fold)
+        svm_word_fold.fit(X_word_fold_train, y_fold_train)
+        p_word_oof[val_idx] = svm_word_fold.predict_proba(X_word_fold_val)[:, 1]
+        
+        # Denso
+        tfidf_lemmas_fold = TfidfVectorizer(max_features=10000, min_df=3)
+        X_lemmas_fold_train = tfidf_lemmas_fold.fit_transform(df_fold_train["texto_lematizado"])
+        X_lemmas_fold_val = tfidf_lemmas_fold.transform(df_fold_val["texto_lematizado"])
+        
+        lda_8_fold = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_fold_train)
+        nmf_8_fold = NMF(n_components=8, random_state=42, max_iter=200).fit(X_lemmas_fold_train)
+        lda_30_fold = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_fold_train)
+        nmf_30_fold = NMF(n_components=30, random_state=42, max_iter=200).fit(X_lemmas_fold_train)
+        
+        scaler_estilo_fold = StandardScaler()
+        X_estilo_fold_train = scaler_estilo_fold.fit_transform(df_fold_train[ESTILO_FEATURE_NAMES].values)
+        X_denso_fold_train = np.hstack([
+            X_estilo_fold_train,
+            extrair_vetor_k_mais_3(lda_8_fold, X_lemmas_fold_train),
+            extrair_vetor_k_mais_3(nmf_8_fold, X_lemmas_fold_train),
+            extrair_vetor_k_mais_3(lda_30_fold, X_lemmas_fold_train),
+            extrair_vetor_k_mais_3(nmf_30_fold, X_lemmas_fold_train)
+        ])
+        
+        xgb_fold = XGBClassifier(n_estimators=150, max_depth=4, learning_rate=0.08, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1)
+        xgb_fold.fit(X_denso_fold_train, y_fold_train)
+        
+        X_estilo_fold_val = scaler_estilo_fold.transform(df_fold_val[ESTILO_FEATURE_NAMES].values)
+        X_denso_fold_val = np.hstack([
+            X_estilo_fold_val,
+            extrair_vetor_k_mais_3(lda_8_fold, X_lemmas_fold_val),
+            extrair_vetor_k_mais_3(nmf_8_fold, X_lemmas_fold_val),
+            extrair_vetor_k_mais_3(lda_30_fold, X_lemmas_fold_val),
+            extrair_vetor_k_mais_3(nmf_30_fold, X_lemmas_fold_val)
+        ])
+        p_denso_oof[val_idx] = xgb_fold.predict_proba(X_denso_fold_val)[:, 1]
+
+    # -------------------------------------------------------------
+    # 1. Treinamento Final dos Modelos-Base em Todo o Conjunto
+    # -------------------------------------------------------------
+    logger.info("Treinando modelos-base finais em todo o conjunto de desenvolvimento...")
+    tfidf_char = TfidfVectorizer(analyzer="char", ngram_range=(3, 5), min_df=5, max_features=50000, sublinear_tf=True)
+    X_char_train = tfidf_char.fit_transform(df_treino["texto_cru"])
     base_svm_char = LinearSVC(C=1.0, random_state=42, max_iter=2000)
-    svm_char = CalibratedClassifierCV(estimator=base_svm_char, cv=3)
+    # Calibração explícita group-aware para o modelo final
+    cv_char_final = list(GroupKFold(n_splits=3).split(X_char_train, y_train, groups=df_treino["id_noticia"]))
+    svm_char = CalibratedClassifierCV(estimator=base_svm_char, cv=cv_char_final)
     svm_char.fit(X_char_train, y_train)
 
-    # -------------------------------------------------------------
-    # 2. Ramo SVM Palavras (TF-IDF de 1 e 2 gramas no texto limpo)
-    # -------------------------------------------------------------
-    logger.info("A treinar TF-IDF de Palavras (1 e 2 gramas) + LinearSVC...")
-    tfidf_word = TfidfVectorizer(
-        ngram_range=(1, 2),
-        min_df=3,
-        max_features=30000,
-        sublinear_tf=True
-    )
+    tfidf_word = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=30000, sublinear_tf=True)
     X_word_train = tfidf_word.fit_transform(df_treino["texto_limpo"])
-
     base_svm_word = LinearSVC(C=1.0, random_state=42, max_iter=2000)
-    svm_word = CalibratedClassifierCV(estimator=base_svm_word, cv=3)
+    # Calibração explícita group-aware para o modelo final
+    cv_word_final = list(GroupKFold(n_splits=3).split(X_word_train, y_train, groups=df_treino["id_noticia"]))
+    svm_word = CalibratedClassifierCV(estimator=base_svm_word, cv=cv_word_final)
     svm_word.fit(X_word_train, y_train)
 
-    # -------------------------------------------------------------
-    # 3. Modelos Temáticos: LDA e NMF (k=8 e k=30) no texto lematizado
-    # -------------------------------------------------------------
-    logger.info("A ajustar modelos temáticos não supervisionados (LDA e NMF com k=8 e k=30)...")
     tfidf_lemmas = TfidfVectorizer(max_features=10000, min_df=3)
     X_lemmas_train = tfidf_lemmas.fit_transform(df_treino["texto_lematizado"])
+    
+    lda_8 = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_train)
+    nmf_8 = NMF(n_components=8, random_state=42, max_iter=200).fit(X_lemmas_train)
+    lda_30 = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_train)
+    nmf_30 = NMF(n_components=30, random_state=42, max_iter=200).fit(X_lemmas_train)
 
-    # Modelos com k=8
-    lda_8 = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1)
-    lda_8.fit(X_lemmas_train)
-
-    nmf_8 = NMF(n_components=8, random_state=42, max_iter=200)
-    nmf_8.fit(X_lemmas_train)
-
-    # Modelos com k=30
-    lda_30 = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1)
-    lda_30.fit(X_lemmas_train)
-
-    nmf_30 = NMF(n_components=30, random_state=42, max_iter=200)
-    nmf_30.fit(X_lemmas_train)
-
-    v_lda8 = extrair_vetor_k_mais_3(lda_8, X_lemmas_train)
-    v_nmf8 = extrair_vetor_k_mais_3(nmf_8, X_lemmas_train)
-    v_lda30 = extrair_vetor_k_mais_3(lda_30, X_lemmas_train)
-    v_nmf30 = extrair_vetor_k_mais_3(nmf_30, X_lemmas_train)
-
-    # -------------------------------------------------------------
-    # 4. Ramo XGBoost Denso: Estilo (15 features) + Temas (k=8 e k=30)
-    # -------------------------------------------------------------
-    logger.info("A treinar XGBoost Denso (Estilo + Temas)...")
-    X_estilo = df_treino[ESTILO_FEATURE_NAMES].values
-    X_denso_train = np.hstack([X_estilo, v_lda8, v_nmf8, v_lda30, v_nmf30])
-
-    xgb_denso = XGBClassifier(
-        n_estimators=150,
-        max_depth=4,
-        learning_rate=0.08,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        eval_metric="logloss",
-        random_state=42,
-        n_jobs=-1
-    )
+    scaler_estilo = StandardScaler()
+    X_estilo_train = scaler_estilo.fit_transform(df_treino[ESTILO_FEATURE_NAMES].values)
+    X_denso_train = np.hstack([
+        X_estilo_train,
+        extrair_vetor_k_mais_3(lda_8, X_lemmas_train),
+        extrair_vetor_k_mais_3(nmf_8, X_lemmas_train),
+        extrair_vetor_k_mais_3(lda_30, X_lemmas_train),
+        extrair_vetor_k_mais_3(nmf_30, X_lemmas_train)
+    ])
+    
+    xgb_denso = XGBClassifier(n_estimators=150, max_depth=4, learning_rate=0.08, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1)
     xgb_denso.fit(X_denso_train, y_train)
 
     # -------------------------------------------------------------
-    # 5. Meta-Modelo: Regressão Logística
+    # 2. Meta-Modelo (Treinado Estritamente com OOF)
     # -------------------------------------------------------------
-    logger.info("A ajustar Meta-Modelo de Regressão Logística...")
-    p_char = svm_char.predict_proba(X_char_train)[:, 1].reshape(-1, 1)
-    p_word = svm_word.predict_proba(X_word_train)[:, 1].reshape(-1, 1)
-    p_denso = xgb_denso.predict_proba(X_denso_train)[:, 1].reshape(-1, 1)
-
-    X_meta_train = np.hstack([p_char, p_word, p_denso])
-
+    logger.info("A ajustar Meta-Modelo de Regressão Logística sobre previsões OOF...")
+    X_meta_train = np.hstack([p_char_oof.reshape(-1, 1), p_word_oof.reshape(-1, 1), p_denso_oof.reshape(-1, 1)])
     meta_lr = LogisticRegression(C=1.0, solver="lbfgs", random_state=42)
     meta_lr.fit(X_meta_train, y_train)
-
     logger.info(f"Pesos do Meta-Modelo (Char, Word, Denso): {meta_lr.coef_[0]}")
 
     # -------------------------------------------------------------
     # 6. Avaliação e Verificação do Limiar 0.46
     # -------------------------------------------------------------
+    limiar_decisao = 0.46
+    
+    # 6.1 Relatório de Desenvolvimento (OOF)
+    logger.info("--- RELATÓRIO DO CONJUNTO DE DESENVOLVIMENTO (OOF) ---")
+    p_fake_oof = meta_lr.predict_proba(X_meta_train)[:, 1]
+    y_pred_oof = (p_fake_oof >= limiar_decisao).astype(int)
+    f1_oof = f1_score(y_train, y_pred_oof, pos_label=1)
+    logger.info(f"F1-Score OOF: {f1_oof:.4f}")
+    logger.info("\n" + classification_report(y_train, y_pred_oof, target_names=["Verdadeiro", "Falso"]))
+    
+    # 6.2 Relatório de Teste
+    logger.info("--- RELATÓRIO DO CONJUNTO DE TESTE ---")
     df_eval = df_val if df_val is not None else df_treino
     y_eval = df_eval["target"].values
 
@@ -185,8 +226,9 @@ def treinar_stacking(
     v_lda30_eval = extrair_vetor_k_mais_3(lda_30, X_lem_eval)
     v_nmf30_eval = extrair_vetor_k_mais_3(nmf_30, X_lem_eval)
 
+    X_estilo_eval = scaler_estilo.transform(df_eval[ESTILO_FEATURE_NAMES].values)
     X_denso_eval = np.hstack([
-        df_eval[ESTILO_FEATURE_NAMES].values,
+        X_estilo_eval,
         v_lda8_eval, v_nmf8_eval, v_lda30_eval, v_nmf30_eval
     ])
 
@@ -197,11 +239,10 @@ def treinar_stacking(
     X_meta_eval = np.hstack([p_char_eval, p_word_eval, p_denso_eval])
     p_fake_final = meta_lr.predict_proba(X_meta_eval)[:, 1]
 
-    limiar_decisao = 0.46
     y_pred = (p_fake_final >= limiar_decisao).astype(int)
 
     f1_obtido = f1_score(y_eval, y_pred, pos_label=1)
-    logger.info(f"F1-Score obtido (com limiar {limiar_decisao}): {f1_obtido:.4f}")
+    logger.info(f"F1-Score Teste (limiar {limiar_decisao}): {f1_obtido:.4f}")
     logger.info("\n" + classification_report(y_eval, y_pred, target_names=["Verdadeiro", "Falso"]))
 
     # -------------------------------------------------------------
@@ -217,6 +258,7 @@ def treinar_stacking(
         "nmf_8": nmf_8,
         "lda_30": lda_30,
         "nmf_30": nmf_30,
+        "scaler_estilo": scaler_estilo,
         "xgb_denso": xgb_denso,
         "meta_modelo": meta_lr,
         "limiar": 0.46,
@@ -247,69 +289,58 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
         on=["id_noticia", "target"],
         suffixes=("_11", "_master")
     )
+    
+    # Criar colunas esperadas pelo pipeline de ML
+    if "texto_bert" in df_unificado.columns:
+        df_unificado["texto_cru"] = df_unificado["texto_bert"]
+        df_unificado["texto_limpo"] = df_unificado["texto_bert"].astype(str).str.lower()
+    elif "texto_truncado" in df_unificado.columns:
+        df_unificado["texto_cru"] = df_unificado["texto_truncado"]
+        df_unificado["texto_limpo"] = df_unificado["texto_truncado"].astype(str).str.lower()
+        
+    if "texto_tfidf" in df_unificado.columns:
+        df_unificado["texto_lematizado"] = df_unificado["texto_tfidf"]
+    else:
+        df_unificado["texto_lematizado"] = df_unificado["texto_limpo"]
+
+    renames = {
+        'percentage_of_news_with_spelling_errors': 'rc_spelling_errors',
+        'number_of_modal_verbs_density': 'rc_modal_verbs_density',
+        'number_of_subjuntive_and_imperative_verbs_density': 'rc_subj_imp_verbs_density',
+        'number_of_singular_first_and_second_personal_pronouns_density': 'rc_pron_1_2_sing_density',
+        'number_of_plural_first_personal_pronouns_density': 'rc_pron_1_plur_density',
+    }
+    df_unificado.rename(columns=renames, inplace=True)
+
     return df_unificado
 
-
-def gerar_dados_sinteticos_para_teste(n_samples: int = 80) -> pd.DataFrame:
-    """Gera um DataFrame mock estruturado para validar a execução técnica."""
-    dados = []
-    textos_true = [
-        "O ministério da fazenda publicou portaria com as novas regras fiscais para os estados.",
-        "Pesquisa científica da universidade mapeia os efeitos do clima na agricultura regional.",
-        "Dados divulgados pelo instituto apontam redução do índice de desemprego no trimestre."
-    ]
-    textos_fake = [
-        "URGENTE repasse agora mesmo veja o que o governo escondeu de você escândalo confirmado",
-        "Bomba caiu na rede o plano secreto que a mídia não divulga compartilhe antes que apaguem",
-        "Atenção segredo revelado por fonte anônima tudo vai mudar amanhã repasse já"
-    ]
-
-    for i in range(n_samples):
-        is_fake = i % 2 == 1
-        t_cru = textos_fake[i % len(textos_fake)] if is_fake else textos_true[i % len(textos_true)]
-        t_limpo = t_cru.lower()
-        t_lem = " ".join([w for w in t_limpo.split() if len(w) > 3])
-
-        row = {
-            "texto_cru": t_cru,
-            "texto_limpo": t_limpo,
-            "texto_lematizado": t_lem,
-            "target": 1 if is_fake else 0,
-            "trunc_pausality": np.random.uniform(0.1, 0.4),
-            "trunc_emotiveness": np.random.uniform(0.3, 0.8) if is_fake else np.random.uniform(0.1, 0.4),
-            "trunc_diversity": np.random.uniform(0.6, 0.8),
-            "trunc_upper_case_density": np.random.uniform(0.05, 0.2) if is_fake else np.random.uniform(0.0, 0.05),
-            "trunc_verb_density": np.random.uniform(0.1, 0.3),
-            "trunc_noun_density": np.random.uniform(0.2, 0.5),
-            "trunc_adj_density": np.random.uniform(0.05, 0.2),
-            "trunc_adv_density": np.random.uniform(0.02, 0.1),
-            "trunc_pron_density": np.random.uniform(0.05, 0.15),
-            "link_density": 0.0,
-            "rc_spelling_errors": np.random.uniform(0.02, 0.1) if is_fake else 0.0,
-            "rc_modal_verbs_density": np.random.uniform(0.0, 0.2),
-            "rc_subj_imp_verbs_density": np.random.uniform(0.0, 0.2),
-            "rc_pron_1_2_sing_density": np.random.uniform(0.02, 0.1) if is_fake else 0.0,
-            "rc_pron_1_plur_density": np.random.uniform(0.0, 0.05),
-        }
-        dados.append(row)
-
-    return pd.DataFrame(dados)
 
 
 if __name__ == "__main__":
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     target_joblib = os.path.join(base_dir, "models", "stacking_miopia_0961.joblib")
 
-    caminho_11 = os.path.join(base_dir, "data", "dataset_11.csv")
-    caminho_master = os.path.join(base_dir, "data", "fake_br_master.csv")
+    caminho_11 = os.path.join(base_dir, "api", "data", "dataset_11.csv")
+    caminho_master = os.path.join(base_dir, "api", "data", "fake_br_master.csv")
 
     if os.path.exists(caminho_11) and os.path.exists(caminho_master):
-        logger.info("A carregar bases reais de data/...")
+        logger.info(f"A carregar bases reais: {caminho_11} e {caminho_master}")
         df_completo = carregar_dados_reais(caminho_11, caminho_master)
-        treinar_stacking(df_completo, output_path=target_joblib)
+        
+        # Divisão com GroupShuffleSplit para que pares da mesma id_noticia não se separem
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        train_idx, test_idx = next(gss.split(df_completo, groups=df_completo["id_noticia"]))
+        
+        df_treino = df_completo.iloc[train_idx]
+        df_teste = df_completo.iloc[test_idx]
+        
+        logger.info(f"Grupos no Treino: {df_treino['id_noticia'].nunique()} | Tamanho: {len(df_treino)}")
+        logger.info(f"Grupos no Teste Reservado: {df_teste['id_noticia'].nunique()} | Tamanho: {len(df_teste)}")
+        
+        treinar_stacking(df_treino=df_treino, df_val=df_teste, output_path=target_joblib)
     else:
-        logger.warning("Bases reais não encontradas em data/. A executar com dados sintéticos...")
-        df_mock = gerar_dados_sinteticos_para_teste(n_samples=80)
-        treinar_stacking(df_mock, output_path=target_joblib)
+        erro_msg = f"Bases reais não encontradas: {caminho_11} ou {caminho_master}"
+        logger.error(erro_msg)
+        raise FileNotFoundError(erro_msg)
     
     logger.info("Pipeline concluído.")

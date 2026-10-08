@@ -47,3 +47,21 @@ def test_filtro_viabilidade_texto_curto():
     valido, motivo, total = validar_viabilidade_analise(texto_curto)
     assert valido is False
     assert total < 30
+
+
+def test_ausencia_intersecao_grupos_calibracao():
+    """Verifica se o GroupKFold impede interseção de grupos entre treino e validação, garantindo calibração group-aware segura."""
+    from sklearn.model_selection import GroupKFold
+    import numpy as np
+
+    X = np.random.rand(10, 2)
+    y = np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1])
+    groups = np.array([1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
+
+    gkf = GroupKFold(n_splits=3)
+    for train_idx, val_idx in gkf.split(X, y, groups):
+        train_groups = set(groups[train_idx])
+        val_groups = set(groups[val_idx])
+        
+        # A interseção entre os grupos deve ser estritamente vazia
+        assert len(train_groups.intersection(val_groups)) == 0
