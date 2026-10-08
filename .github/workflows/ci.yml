@@ -66,10 +66,24 @@ jobs:
       run: |
         cd backend
         uvicorn api.main:app --host 0.0.0.0 --port 8000 &
-        sleep 3
+        # Aguarda a API estar online e aceitando conexões (polling no /health)
+        for i in {1..30}; do
+          if curl -s http://localhost:8000/health | grep -q "online"; then
+            echo "API online e pronta para testes E2E!"
+            break
+          fi
+          echo "Aguardando inicialização da API ($i/30)..."
+          sleep 1
+        done
+
         # POST /analisar
-        RESPONSE=$(curl -s -X POST http://localhost:8000/analisar -H "Content-Type: application/json" -d '{"texto": "O Ministério da Fazenda divulgou hoje uma nota oficial com as diretrizes econômicas e parâmetros fiscais que serão apresentados aos governadores na reunião marcada para o início do próximo mês em Brasília, com o objetivo de equilibrar as contas públicas e impulsionar novos investimentos estruturais no país.", "url": "http://teste.com"}')
+        RESPONSE=$(curl -s -S --fail-with-body -X POST http://localhost:8000/analisar \
+          -H "Content-Type: application/json" \
+          -d '{"texto": "O Ministério da Fazenda divulgou hoje uma nota oficial com as diretrizes econômicas e parâmetros fiscais que serão apresentados aos governadores na reunião marcada para o início do próximo mês em Brasília, com o objetivo de equilibrar as contas públicas e impulsionar novos investimentos estruturais no país.", "url": "http://teste.com"}')
         echo "Resposta /analisar: $RESPONSE"
-        ID=$(echo $RESPONSE | python -c "import sys, json; print(json.load(sys.stdin)['id'])")
+        ID=$(echo "$RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin)['id'])")
+
         # POST /avaliar
-        curl -s -X POST http://localhost:8000/avaliar -H "Content-Type: application/json" -d "{\"noticia_id\": \"$ID\", \"client_id\": \"ci-runner\", \"avaliacao\": 1}"
+        curl -s -S --fail-with-body -X POST http://localhost:8000/avaliar \
+          -H "Content-Type: application/json" \
+          -d "{\"noticia_id\": $ID, \"client_id\": \"ci-runner\", \"avaliacao\": 1}"
