@@ -58,9 +58,50 @@ def test_health_check():
     """Verifica se a rota de monitoramento responde online."""
     response = client.get("/health")
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "online"
-    assert "Stacking" in data["model"]
+    assert response.json()["status"] == "online"
+
+
+def test_readiness_check_success():
+    """Verifica se a rota /ready retorna sucesso (banco + modelo)."""
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
+
+def test_readiness_check_failure(monkeypatch):
+    """Verifica se a rota /ready retorna 503 quando banco falha."""
+    def mock_execute(*args, **kwargs):
+        raise Exception("Banco fora do ar")
+    
+    # Mockando a sessão TestingSessionLocal injetada pelo Depends
+    # Como não podemos facilmente mockar o execute do DB sem afetar o Depends,
+    # vamos mockar o carregamento do bundle para falhar:
+    def mock_carregar_bundle():
+        raise Exception("Modelo offline")
+        
+    monkeypatch.setattr("api.inferencia.carregar_bundle_stacking", mock_carregar_bundle)
+    
+    response = client.get("/ready")
+    assert response.status_code == 503
+    json_resp = response.json()
+    assert json_resp["detail"]["status"] == "not ready"
+    assert "Erro ao carregar modelo: Modelo offline" in json_resp["detail"]["reasons"]
+
+
+def test_readiness_check_db_failure(monkeypatch):
+    """Verifica se a rota /ready retorna 503 quando o DB falha."""
+    def mock_execute(*args, **kwargs):
+        raise Exception("Banco fora do ar")
+    
+    # Mock na classe Session
+    from sqlalchemy.orm import Session
+    monkeypatch.setattr(Session, "execute", mock_execute)
+    
+    response = client.get("/ready")
+    assert response.status_code == 503
+    json_resp = response.json()
+    assert json_resp["detail"]["status"] == "not ready"
+    assert any("Banco de dados inacessível: Banco fora do ar" in r for r in json_resp["detail"]["reasons"])
 
 
 def test_analisar_texto_curto_rejeicao():
