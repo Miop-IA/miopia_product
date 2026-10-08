@@ -1,18 +1,42 @@
 import os
 import logging
-from typing import Dict, Tuple, Any
+from typing import Any, Dict, Optional, Tuple
 import numpy as np
 import scipy.stats
 import joblib
 
 logger = logging.getLogger(__name__)
 
-from .feature_contract import ESTILO_FEATURE_NAMES
+from api.bundle_spec import (
+    BLOCOS_TEMATICOS,
+    ESTILO_FEATURE_NAMES,
+    FEATURE_COUNT,
+    N_FEATURES_TEMAS,
+    BundleIncompativelError,
+    ModeloAusenteError,
+    ModeloCorrompidoError,
+    ModeloInvalidoError,
+    resumo_bundle,
+    validar_bundle,
+)
 
 _stacking_bundle = None
 
+CAMINHO_PADRAO_MODELO = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "stacking_miopia_0961.joblib"
+)
 
-def carregar_bundle_stacking():
+_TEXTO_SMOKE = "verificacao de integridade do modelo de producao durante a inicializacao da api"
+
+
+def caminho_modelo() -> str:
+    """Caminho do bundle: variável MODEL_PATH (via settings) ou o artefato padrão em backend/models."""
+    from api.config import get_settings
+
+    return get_settings().model_path or CAMINHO_PADRAO_MODELO
+
+
+def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
     """
     Carrega o pacote de artefatos do Stacking:
     - tfidf_char + svm_caracteres
@@ -22,11 +46,10 @@ def carregar_bundle_stacking():
     - meta_modelo (Regressão Logística com corte dinâmico)
     """
     global _stacking_bundle
-    if _stacking_bundle is not None:
+    if _stacking_bundle is not None and caminho is None:
         return _stacking_bundle
 
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    model_path = os.path.join(base_dir, "models", "stacking_miopia_v1.joblib")
+    model_path = caminho or caminho_modelo()
 
     if os.path.exists(model_path):
         try:
@@ -131,6 +154,36 @@ def classificar_faixa_e_orientacao(prob_fake: float, limiar: float, f1_score: fl
     return faixa, orientacao
 
 
+def _inferir(bundle: Dict[str, Any], features_estilo: Dict[str, float], textos: Dict[str, str]) -> float:
+    """Executa os três ramos e o metamodelo. Retorna a probabilidade final de 'fake'."""
+    # 1. Ramo Caracteres
+    X_char = bundle["tfidf_char"].transform([textos["texto_cru"]])
+    p_fake_char = float(bundle["svm_caracteres"].predict_proba(X_char)[0][1])
+
+    # 2. Ramo Palavras
+    X_word = bundle["tfidf_word"].transform([textos["texto_limpo"]])
+    p_fake_word = float(bundle["svm_palavras"].predict_proba(X_word)[0][1])
+
+    # 3. Ramo XGBoost Denso: 15 estilo + 88 temas = 103
+    faltando = [f for f in ESTILO_FEATURE_NAMES if f not in features_estilo]
+    if faltando:
+        raise ValueError(f"features estilométricas ausentes: {', '.join(faltando)}")
+    vetor_estilo = np.array([features_estilo[f] for f in ESTILO_FEATURE_NAMES], dtype=np.float32)
+    vetor_temas = extrair_features_topicos(textos["texto_lematizado"], bundle)
+    X_denso = np.concatenate([vetor_estilo, vetor_temas]).reshape(1, -1)
+
+    n_esperado = int(bundle["feature_count"])
+    if X_denso.shape[1] != n_esperado or X_denso.shape[1] != FEATURE_COUNT:
+        raise BundleIncompativelError(
+            [f"vetor denso com {X_denso.shape[1]} features, bundle/contrato exigem {n_esperado}/{FEATURE_COUNT}"]
+        )
+    p_fake_denso = float(bundle["xgb_denso"].predict_proba(X_denso)[0][1])
+
+    # 4. Metamodelo
+    X_meta = np.array([[p_fake_char, p_fake_word, p_fake_denso]])
+    return float(bundle["meta_modelo"].predict_proba(X_meta)[0][1])
+
+
 def predizer_risco_stacking(
     features_estilo: Dict[str, float],
     textos: Dict[str, str]
@@ -143,6 +196,7 @@ def predizer_risco_stacking(
     4. Meta-modelo: Regressão Logística com limiar dinâmico do bundle
     """
     bundle = carregar_bundle_stacking()
+    prob_fake_final = _inferir(bundle, features_estilo, textos)
 
     # 1. Ramo Caracteres
     vec_char = bundle["tfidf_char"]
