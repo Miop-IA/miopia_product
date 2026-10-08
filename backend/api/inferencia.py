@@ -53,10 +53,39 @@ def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
     if os.path.exists(model_path):
         try:
             _stacking_bundle = joblib.load(model_path)
-            logger.info("Pipeline Stacking carregado de arquivo com sucesso.")
+            
+            # Validação do Bundle Incompleto
+            required_keys = ["tfidf_char", "svm_caracteres", "tfidf_word", "svm_palavras", "xgb_denso", "meta_modelo", "limiar", "f1_score"]
+            for k in required_keys:
+                if k not in _stacking_bundle:
+                    raise RuntimeError(f"Bundle corrompido: chave obrigatória '{k}' ausente.")
+                    
+            # Validação da dimensão do XGBoost
+            if hasattr(_stacking_bundle["xgb_denso"], "n_features_in_") and _stacking_bundle["xgb_denso"].n_features_in_ != 103:
+                raise RuntimeError("Dimensão errada: O modelo não possui 103 features.")
+                
+            # Validação do Manifesto
+            manifest_path = os.path.join(base_dir, "models", "model_manifest.json")
+            if not os.path.exists(manifest_path):
+                raise RuntimeError("Manifesto ausente.")
+                
+            import json
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+                
+            # Manifesto Inconsistente
+            if "feature_count" not in manifest or manifest["feature_count"] != 103:
+                raise RuntimeError("Manifesto inconsistente: feature_count inválido.")
+            if abs(manifest.get("threshold", 0.0) - _stacking_bundle["limiar"]) > 1e-4:
+                raise RuntimeError("Manifesto inconsistente: divergência no threshold.")
+            if abs(manifest.get("F1", 0.0) - _stacking_bundle["f1_score"]) > 1e-4:
+                raise RuntimeError("Manifesto inconsistente: divergência no F1.")
+                
+            logger.info("Pipeline Stacking carregado e validado com sucesso.")
             return _stacking_bundle
         except Exception as e:
-            logger.error(f"Erro ao deserializar o bundle do Stacking: {e}")
+            _stacking_bundle = None
+            logger.error(f"Erro ao deserializar ou validar o bundle do Stacking: {e}")
             raise RuntimeError(f"Erro ao carregar o modelo Stacking: {e}")
 
     error_msg = f"Artefato '{model_path}' não encontrado. O sistema não pode inicializar sem o modelo de inferência."

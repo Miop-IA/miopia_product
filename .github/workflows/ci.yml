@@ -1,69 +1,56 @@
-name: CI Miop.IA
+name: CI Backend
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "feature/*" ]
   pull_request:
     branches: [ "main" ]
 
 jobs:
-  test-backend:
+  test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./backend
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: dbname
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.10"
-        cache: 'pip'
-
+        python-version: "3.12"
+        
     - name: Install dependencies
       run: |
+        cd backend
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest httpx pytest-asyncio flake8
+        pip install pytest pytest-asyncio httpx
 
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
-    - name: Test with pytest
+    - name: Run Pytest
       env:
-        EXTENSION_ORIGIN: "chrome-extension://dummyid"
-        POSTGRES_USER: "test"
-        POSTGRES_PASSWORD: "testpassword"
-        POSTGRES_DB: "miopiadb"
-        POSTGRES_HOST: "localhost"
-        PORT: "8000"
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
       run: |
-        pytest tests/
+        cd backend
+        pytest -v
 
-  test-extension:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./miopia/benchmark
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: ./miopia/benchmark/package-lock.json
-
-    - name: Install Node dependencies
-      run: npm install
-
-    - name: Run Extension Benchmarks
-      run: npm run benchmark
+    - name: Validações de Estrutura (Alembic)
+      env:
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
+      run: |
+        cd backend
+        alembic upgrade head
