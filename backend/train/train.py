@@ -340,7 +340,12 @@ def treinar_stacking(
         manifest_path = os.path.join(os.path.dirname(output_path), "model_manifest.json")
         try:
             import json, subprocess, sklearn, xgboost, spacy
-            commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
+            try:
+                commit_hash = subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+                ).decode("utf-8").strip()
+            except Exception:
+                commit_hash = "desconhecido"  # fora de um repositório git (Docker, Render, zip)
             
             manifest = {
                 "model_version": bundle["version"],

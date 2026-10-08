@@ -2,5 +2,6 @@
     "url": "https://curto.com.br",
     "expected_method": "mozilla_readability",
     "words": 7,
-    "tolerance": 0
+    "tolerance": 0,
+    "expected_status": 400
 }

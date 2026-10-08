@@ -22,7 +22,7 @@
 
   var valorSelecionado = null;
   var noticiaId    = null;
-  var CLIENTE_ID   = "ext-miopia-001";
+  var CLIENTE_ID   = null; // UUID anônimo por instalação (chrome.storage.local)
   var dominioAtual = "";
 
   /* ---- helpers ---- */
@@ -71,6 +71,39 @@
     rc_pron_1_2_sing_density:   { label: "1.ª pessoa do singular",  desc: "Relato pessoal (eu/você)" },
     rc_pron_1_plur_density:     { label: "1.ª pessoa do plural",    desc: "Relato coletivo (nós)" }
   };
+
+  /* ---- referência do treino (média, desvio) para dizer o que é "acima do normal" ----
+     Valores de scaler_estilo do modelo v1 (Fake.br). Cada métrica tem escala própria:
+     um limiar fixo único (0.3) dispara sempre para umas e nunca para outras. */
+  var REFERENCIA = {
+    trunc_pausality:           [2.706, 0.909],
+    trunc_emotiveness:         [0.167, 0.076],
+    trunc_diversity:           [0.591, 0.086],
+    trunc_upper_case_density:  [0.016, 0.017],
+    trunc_verb_density:        [0.132, 0.031],
+    trunc_noun_density:        [0.306, 0.052],
+    trunc_adj_density:         [0.041, 0.021],
+    trunc_adv_density:         [0.030, 0.018],
+    trunc_pron_density:        [0.028, 0.019],
+    link_density:              [0.001, 0.003],
+    rc_spelling_errors:        [0.003, 0.008],
+    rc_modal_verbs_density:    [0.020, 0.011],
+    rc_subj_imp_verbs_density: [0.006, 0.006],
+    rc_pron_1_2_sing_density:  [0.002, 0.005],
+    rc_pron_1_plur_density:    [0.001, 0.002]
+  };
+  var Z_SINAL = 1.5;
+  // Métricas em que o sinal é o valor BAIXO (diversidade baixa = vocabulário repetitivo)
+  var SINAL_INVERTIDO = { trunc_diversity: true };
+
+  // Quantos desvios a métrica está na direção "suspeita"; <= 0 significa normal
+  function intensidadeSinal(chave, val) {
+    var ref = REFERENCIA[chave];
+    if (!ref || typeof val !== "number" || !isFinite(val)) return 0;
+    var z = (val - ref[0]) / ref[1];
+    return SINAL_INVERTIDO[chave] ? -z : z;
+  }
+  function sinalAtivo(chave, val) { return intensidadeSinal(chave, val) > Z_SINAL; }
 
   /* ---- padrões de destaque por métrica (suspeito) ---- */
   var PADROES_HIGHLIGHT = {
@@ -141,8 +174,7 @@
     }
 
     Object.keys(PADROES_HIGHLIGHT).forEach(function(chave) {
-      var val = metricas[chave];
-      if (typeof val !== "number" || val <= 0.3) return;
+      if (!sinalAtivo(chave, metricas[chave])) return;
       var info = PADROES_HIGHLIGHT[chave];
       html = html.replace(info.regex(), function(m) {
         return '<span class="destaque-suspeito">' + m + '</span>';
@@ -178,8 +210,7 @@
     }
 
     Object.keys(PADROES_HIGHLIGHT).forEach(function(chave) {
-      var val = metricas[chave];
-      if (typeof val !== "number" || val <= 0.3) return;
+      if (!sinalAtivo(chave, metricas[chave])) return;
       var info = PADROES_HIGHLIGHT[chave];
       var matches = snippet.match(info.regex()) || [];
       var cnt = 0;
@@ -208,10 +239,10 @@
     if (!pills.length) {
       var ativas = [];
       Object.keys(metricas).forEach(function(chave) {
-        var val = metricas[chave];
         var info = MAPA[chave];
-        if (!info || typeof val !== "number" || val <= 0.3) return;
-        ativas.push({ val: val, info: info });
+        var forca = intensidadeSinal(chave, metricas[chave]);
+        if (!info || forca <= Z_SINAL) return;
+        ativas.push({ val: forca, info: info });
       });
       ativas.sort(function(a, b) { return b.val - a.val; });
 
@@ -260,20 +291,41 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ texto: texto, url: url || "", num_links: numLinks })
     }).then(function(r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
+      if (r.ok) return r.json();
+      // Mostra o motivo devolvido pela API (ex.: texto com menos de 30 palavras)
+      return r.json().catch(function() { return {}; }).then(function(corpo) {
+        var detalhe = corpo && corpo.detail;
+        throw new Error(typeof detalhe === "string" ? detalhe : "HTTP " + r.status);
+      });
+    });
+  }
+
+  function obterClienteId() {
+    if (CLIENTE_ID) return Promise.resolve(CLIENTE_ID);
+    return new Promise(function(resolve) {
+      chrome.storage.local.get("miopia_client_id", function(r) {
+        var id = r && r.miopia_client_id;
+        if (!id) {
+          id = crypto.randomUUID(); // 36 caracteres, cabe em client_id String(36); não identifica a pessoa
+          chrome.storage.local.set({ miopia_client_id: id });
+        }
+        CLIENTE_ID = id;
+        resolve(id);
+      });
     });
   }
 
   function enviarVoto(noticiaId, avaliacao) {
-    return fetch("http://localhost:8000/avaliar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        noticia_id: noticiaId,
-        client_id: CLIENTE_ID,
-        avaliacao: avaliacao
-      })
+    return obterClienteId().then(function(clienteId) {
+      return fetch("http://localhost:8000/avaliar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          noticia_id: noticiaId,
+          client_id: clienteId,
+          avaliacao: avaliacao
+        })
+      });
     }).then(function(r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
@@ -386,7 +438,9 @@
       mostra(conteudoAnalise);
       preencheAnalise(dados, tituloExtraido, texto);
     }).catch(function(err) {
-      mostraErro("Erro ao analisar: " + err.message);
+      mostraErro(err.message.indexOf("HTTP") === 0 || err.message === "Failed to fetch"
+        ? "Erro ao analisar: " + err.message
+        : err.message);
     });
   }
 

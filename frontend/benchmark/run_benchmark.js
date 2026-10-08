@@ -3,7 +3,7 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
-const SCRIPTS_DIR = path.join(__dirname, '../scripts');
+const SCRIPTS_DIR = path.join(__dirname, '../src');
 
 // Carrega os scripts originais da extensão
 const readabilityScript = fs.readFileSync(path.join(SCRIPTS_DIR, 'readability.js'), 'utf8');
@@ -159,7 +159,15 @@ async function runBenchmark() {
                     body: JSON.stringify({ texto: result.text, url: url, num_links: result.links || 0 })
                 });
 
-                if (!response.ok) {
+                if (expected.expected_status && expected.expected_status !== 200) {
+                    // Caso negativo: a API DEVE recusar (ex.: 400 para texto curto)
+                    if (response.status === expected.expected_status) {
+                        console.log(`  ✅ API recusou como esperado (HTTP ${response.status})`);
+                    } else {
+                        console.log(`  ❌ Esperado HTTP ${expected.expected_status}, obtido ${response.status}`);
+                        isPass = false;
+                    }
+                } else if (!response.ok) {
                     console.log(`  ❌ Erro da API: ${response.status}`);
                     isPass = false;
                 } else {
