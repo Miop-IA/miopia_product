@@ -14,6 +14,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, f1_score
 from sklearn.model_selection import GroupShuffleSplit, GroupKFold
+from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 # Configuração de logging
@@ -99,7 +100,9 @@ def treinar_stacking(
         tfidf_char_fold = TfidfVectorizer(analyzer="char", ngram_range=(3, 5), min_df=5, max_features=50000, sublinear_tf=True)
         X_char_fold_train = tfidf_char_fold.fit_transform(df_fold_train["texto_cru"])
         X_char_fold_val = tfidf_char_fold.transform(df_fold_val["texto_cru"])
-        svm_char_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=3)
+        # Usa GroupKFold com 3 splits para calibração interna respeitando id_noticia
+        cv_char_fold = list(GroupKFold(n_splits=3).split(X_char_fold_train, y_fold_train, groups=df_fold_train["id_noticia"]))
+        svm_char_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=cv_char_fold)
         svm_char_fold.fit(X_char_fold_train, y_fold_train)
         p_char_oof[val_idx] = svm_char_fold.predict_proba(X_char_fold_val)[:, 1]
         
@@ -107,7 +110,9 @@ def treinar_stacking(
         tfidf_word_fold = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=30000, sublinear_tf=True)
         X_word_fold_train = tfidf_word_fold.fit_transform(df_fold_train["texto_limpo"])
         X_word_fold_val = tfidf_word_fold.transform(df_fold_val["texto_limpo"])
-        svm_word_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=3)
+        # Usa GroupKFold com 3 splits para calibração interna respeitando id_noticia
+        cv_word_fold = list(GroupKFold(n_splits=3).split(X_word_fold_train, y_fold_train, groups=df_fold_train["id_noticia"]))
+        svm_word_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=cv_word_fold)
         svm_word_fold.fit(X_word_fold_train, y_fold_train)
         p_word_oof[val_idx] = svm_word_fold.predict_proba(X_word_fold_val)[:, 1]
         
@@ -121,8 +126,10 @@ def treinar_stacking(
         lda_30_fold = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_fold_train)
         nmf_30_fold = NMF(n_components=30, random_state=42, max_iter=200).fit(X_lemmas_fold_train)
         
+        scaler_estilo_fold = StandardScaler()
+        X_estilo_fold_train = scaler_estilo_fold.fit_transform(df_fold_train[ESTILO_FEATURE_NAMES].values)
         X_denso_fold_train = np.hstack([
-            df_fold_train[ESTILO_FEATURE_NAMES].values,
+            X_estilo_fold_train,
             extrair_vetor_k_mais_3(lda_8_fold, X_lemmas_fold_train),
             extrair_vetor_k_mais_3(nmf_8_fold, X_lemmas_fold_train),
             extrair_vetor_k_mais_3(lda_30_fold, X_lemmas_fold_train),
@@ -132,8 +139,9 @@ def treinar_stacking(
         xgb_fold = XGBClassifier(n_estimators=150, max_depth=4, learning_rate=0.08, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1)
         xgb_fold.fit(X_denso_fold_train, y_fold_train)
         
+        X_estilo_fold_val = scaler_estilo_fold.transform(df_fold_val[ESTILO_FEATURE_NAMES].values)
         X_denso_fold_val = np.hstack([
-            df_fold_val[ESTILO_FEATURE_NAMES].values,
+            X_estilo_fold_val,
             extrair_vetor_k_mais_3(lda_8_fold, X_lemmas_fold_val),
             extrair_vetor_k_mais_3(nmf_8_fold, X_lemmas_fold_val),
             extrair_vetor_k_mais_3(lda_30_fold, X_lemmas_fold_val),
@@ -148,13 +156,17 @@ def treinar_stacking(
     tfidf_char = TfidfVectorizer(analyzer="char", ngram_range=(3, 5), min_df=5, max_features=50000, sublinear_tf=True)
     X_char_train = tfidf_char.fit_transform(df_treino["texto_cru"])
     base_svm_char = LinearSVC(C=1.0, random_state=42, max_iter=2000)
-    svm_char = CalibratedClassifierCV(estimator=base_svm_char, cv=3)
+    # Calibração explícita group-aware para o modelo final
+    cv_char_final = list(GroupKFold(n_splits=3).split(X_char_train, y_train, groups=df_treino["id_noticia"]))
+    svm_char = CalibratedClassifierCV(estimator=base_svm_char, cv=cv_char_final)
     svm_char.fit(X_char_train, y_train)
 
     tfidf_word = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=30000, sublinear_tf=True)
     X_word_train = tfidf_word.fit_transform(df_treino["texto_limpo"])
     base_svm_word = LinearSVC(C=1.0, random_state=42, max_iter=2000)
-    svm_word = CalibratedClassifierCV(estimator=base_svm_word, cv=3)
+    # Calibração explícita group-aware para o modelo final
+    cv_word_final = list(GroupKFold(n_splits=3).split(X_word_train, y_train, groups=df_treino["id_noticia"]))
+    svm_word = CalibratedClassifierCV(estimator=base_svm_word, cv=cv_word_final)
     svm_word.fit(X_word_train, y_train)
 
     tfidf_lemmas = TfidfVectorizer(max_features=10000, min_df=3)
@@ -165,8 +177,10 @@ def treinar_stacking(
     lda_30 = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_train)
     nmf_30 = NMF(n_components=30, random_state=42, max_iter=200).fit(X_lemmas_train)
 
+    scaler_estilo = StandardScaler()
+    X_estilo_train = scaler_estilo.fit_transform(df_treino[ESTILO_FEATURE_NAMES].values)
     X_denso_train = np.hstack([
-        df_treino[ESTILO_FEATURE_NAMES].values,
+        X_estilo_train,
         extrair_vetor_k_mais_3(lda_8, X_lemmas_train),
         extrair_vetor_k_mais_3(nmf_8, X_lemmas_train),
         extrair_vetor_k_mais_3(lda_30, X_lemmas_train),
@@ -188,6 +202,18 @@ def treinar_stacking(
     # -------------------------------------------------------------
     # 6. Avaliação e Verificação do Limiar 0.46
     # -------------------------------------------------------------
+    limiar_decisao = 0.46
+    
+    # 6.1 Relatório de Desenvolvimento (OOF)
+    logger.info("--- RELATÓRIO DO CONJUNTO DE DESENVOLVIMENTO (OOF) ---")
+    p_fake_oof = meta_lr.predict_proba(X_meta_train)[:, 1]
+    y_pred_oof = (p_fake_oof >= limiar_decisao).astype(int)
+    f1_oof = f1_score(y_train, y_pred_oof, pos_label=1)
+    logger.info(f"F1-Score OOF: {f1_oof:.4f}")
+    logger.info("\n" + classification_report(y_train, y_pred_oof, target_names=["Verdadeiro", "Falso"]))
+    
+    # 6.2 Relatório de Teste
+    logger.info("--- RELATÓRIO DO CONJUNTO DE TESTE ---")
     df_eval = df_val if df_val is not None else df_treino
     y_eval = df_eval["target"].values
 
@@ -200,8 +226,9 @@ def treinar_stacking(
     v_lda30_eval = extrair_vetor_k_mais_3(lda_30, X_lem_eval)
     v_nmf30_eval = extrair_vetor_k_mais_3(nmf_30, X_lem_eval)
 
+    X_estilo_eval = scaler_estilo.transform(df_eval[ESTILO_FEATURE_NAMES].values)
     X_denso_eval = np.hstack([
-        df_eval[ESTILO_FEATURE_NAMES].values,
+        X_estilo_eval,
         v_lda8_eval, v_nmf8_eval, v_lda30_eval, v_nmf30_eval
     ])
 
@@ -212,11 +239,10 @@ def treinar_stacking(
     X_meta_eval = np.hstack([p_char_eval, p_word_eval, p_denso_eval])
     p_fake_final = meta_lr.predict_proba(X_meta_eval)[:, 1]
 
-    limiar_decisao = 0.46
     y_pred = (p_fake_final >= limiar_decisao).astype(int)
 
     f1_obtido = f1_score(y_eval, y_pred, pos_label=1)
-    logger.info(f"F1-Score obtido (com limiar {limiar_decisao}): {f1_obtido:.4f}")
+    logger.info(f"F1-Score Teste (limiar {limiar_decisao}): {f1_obtido:.4f}")
     logger.info("\n" + classification_report(y_eval, y_pred, target_names=["Verdadeiro", "Falso"]))
 
     # -------------------------------------------------------------
@@ -232,6 +258,7 @@ def treinar_stacking(
         "nmf_8": nmf_8,
         "lda_30": lda_30,
         "nmf_30": nmf_30,
+        "scaler_estilo": scaler_estilo,
         "xgb_denso": xgb_denso,
         "meta_modelo": meta_lr,
         "limiar": 0.46,
