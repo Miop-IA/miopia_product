@@ -168,7 +168,8 @@ def _inferir(bundle: Dict[str, Any], features_estilo: Dict[str, float], textos: 
     faltando = [f for f in ESTILO_FEATURE_NAMES if f not in features_estilo]
     if faltando:
         raise ValueError(f"features estilométricas ausentes: {', '.join(faltando)}")
-    vetor_estilo = np.array([features_estilo[f] for f in ESTILO_FEATURE_NAMES], dtype=np.float32)
+    vetor_estilo_raw = np.array([[features_estilo[f] for f in ESTILO_FEATURE_NAMES]], dtype=np.float64)
+    vetor_estilo = bundle["scaler_estilo"].transform(vetor_estilo_raw)[0]
     vetor_temas = extrair_features_topicos(textos["texto_lematizado"], bundle)
     X_denso = np.concatenate([vetor_estilo, vetor_temas]).reshape(1, -1)
 

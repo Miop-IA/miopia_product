@@ -194,7 +194,9 @@ def treinar_stacking(
     # 4. Ramo XGBoost Denso: Estilo (15 features) + Temas (k=8 e k=30)
     # -------------------------------------------------------------
     logger.info("A treinar XGBoost Denso (Estilo + Temas)...")
-    X_estilo = df_treino[ESTILO_FEATURE_NAMES].values
+    # O mesmo normalizador é aplicado na avaliação e na inferência da API.
+    scaler_estilo = StandardScaler()
+    X_estilo = scaler_estilo.fit_transform(df_treino[ESTILO_FEATURE_NAMES].values)
     X_denso_train = np.hstack([X_estilo, v_lda8, v_nmf8, v_lda30, v_nmf30])
     if X_denso_train.shape[1] != FEATURE_COUNT:
         raise ValueError(f"Vetor denso com {X_denso_train.shape[1]} features, contrato exige {FEATURE_COUNT}")
