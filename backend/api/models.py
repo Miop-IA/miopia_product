@@ -9,9 +9,12 @@ class Noticia(Base):
     __tablename__ = "noticias"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    hash_texto = Column(String(64), unique=True, index=True, nullable=False)
+    hash_texto = Column(String(64), index=True, nullable=False)
     url = Column(String(500), nullable=True)
     texto = Column(Text, nullable=False)
+    
+    model_version = Column(String(50), nullable=False, default="unknown")
+    pipeline_version = Column(String(50), nullable=False, default="unknown")
     
     # Métricas preditivas
     prob_suspeita = Column(Float, nullable=False)
@@ -36,6 +39,10 @@ class Noticia(Base):
     rc_pron_1_plur_density = Column(Float, nullable=False)
 
     criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('hash_texto', 'model_version', 'pipeline_version', name='_hash_model_pipeline_uc'),
+    )
 
     # Relacionamento com as avaliações da comunidade
     avaliacoes = relationship("Avaliacao", back_populates="noticia", cascade="all, delete-orphan")

@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+import json
+
 from api.config import get_settings
 from api.database import engine, Base, get_db
 from api.models import Noticia, Avaliacao
@@ -23,6 +25,19 @@ from api.inferencia import predizer_risco_stacking, classificar_faixa_e_orientac
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("miopia_api")
 settings = get_settings()
+
+def get_current_versions() -> tuple[str, str]:
+    import os
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    manifest_path = os.path.join(base_dir, "models", "model_manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("model_version", "unknown"), data.get("pipeline_version", "unknown")
+        except Exception as e:
+            logger.error(f"Erro ao ler model_manifest.json: {e}")
+    return "unknown", "unknown"
 
 
 @asynccontextmanager
@@ -81,9 +96,14 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=motivo)
 
     hash_txt = gerar_hash_texto(texto_puro)
+    model_version, pipeline_version = get_current_versions()
 
     # 1. Consulta em Cache O(1)
-    noticia_existente = db.query(Noticia).filter(Noticia.hash_texto == hash_txt).first()
+    noticia_existente = db.query(Noticia).filter(
+        Noticia.hash_texto == hash_txt,
+        Noticia.model_version == model_version,
+        Noticia.pipeline_version == pipeline_version
+    ).first()
 
     if noticia_existente:
         logger.info(f"Cache hit para a hash: {hash_txt}")
@@ -114,6 +134,8 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
             prob_suspeita=noticia_existente.prob_suspeita,
             faixa=noticia_existente.faixa,
             modelo_f1=noticia_existente.modelo_f1,
+            model_version=noticia_existente.model_version,
+            pipeline_version=noticia_existente.pipeline_version,
             orientacao=orientacao,
             metricas=metricas_dto,
             avaliacoes_comunidade=avaliacoes,
@@ -133,6 +155,8 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         prob_suspeita=prob_suspeita,
         faixa=faixa,
         modelo_f1=f1_score,
+        model_version=model_version,
+        pipeline_version=pipeline_version,
         **features,
     )
     db.add(nova_noticia)

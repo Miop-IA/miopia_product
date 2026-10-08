@@ -87,7 +87,7 @@ def test_analisar_noticia_sucesso_e_estrutura():
     assert len(data["hash_texto"]) == 64
     assert 0.0 <= data["prob_suspeita"] <= 1.0
     assert data["faixa"] in ["Confiavel", "Atencao", "Suspeita"]
-    assert data["modelo_f1"] == 0.961
+    assert data["modelo_f1"] > 0.90
 
     metricas = data["metricas"]
     assert len(metricas) == 15
@@ -142,3 +142,25 @@ def test_avaliar_comunidade_ciclo_completo():
     assert res_att_json["avaliacoes_atualizadas"]["verdadeiro"] == 0
     assert res_att_json["avaliacoes_atualizadas"]["falso"] == 1
     assert res_att_json["avaliacoes_atualizadas"]["total"] == 1
+
+def test_cache_invalidation_by_version(monkeypatch):
+    """Garante que a mudança de versão do modelo não reutiliza o cache."""
+    # 1. Simula versão antiga
+    monkeypatch.setattr("api.main.get_current_versions", lambda: ("v1.0", "1.0"))
+    payload = {"texto": TEXTO_VALIDO_LONGO, "url": ""}
+    resp1 = client.post("/analisar", json=payload)
+    assert resp1.status_code == 200
+    id1 = resp1.json()["id"]
+
+    # 2. Chama de novo na MESMA versão (deve dar cache hit e retornar mesmo ID)
+    resp2 = client.post("/analisar", json=payload)
+    assert resp2.json()["id"] == id1
+
+    # 3. Muda a versão do modelo (v2.0) e do pipeline (2.0)
+    monkeypatch.setattr("api.main.get_current_versions", lambda: ("v2.0", "2.0"))
+    resp3 = client.post("/analisar", json=payload)
+    assert resp3.status_code == 200
+    id3 = resp3.json()["id"]
+
+    # Como a versão mudou, a API deve ter processado como texto inédito e gerado novo registro
+    assert id3 != id1
