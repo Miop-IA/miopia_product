@@ -328,12 +328,18 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
     df_11 = pd.read_csv(caminho_dataset_11)
     df_master = pd.read_csv(caminho_master)
 
+    logger.info(f"n_rows_dataset_11: {len(df_11)}")
+    logger.info(f"n_rows_master: {len(df_master)}")
+
     df_unificado = pd.merge(
         df_11,
         df_master,
         on=["id_noticia", "target"],
         suffixes=("_11", "_master")
     )
+    
+    logger.info(f"n_rows_apos_merge: {len(df_unificado)}")
+    logger.info(f"n_grupos_apos_merge: {df_unificado['id_noticia'].nunique()}")
     
     import sys
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -383,8 +389,12 @@ if __name__ == "__main__":
         df_treino = df_completo.iloc[train_idx]
         df_teste = df_completo.iloc[test_idx]
         
+        logger.info(f"n_treino: {len(df_treino)}")
+        logger.info(f"n_teste: {len(df_teste)}")
         logger.info(f"Grupos no Treino: {df_treino['id_noticia'].nunique()} | Tamanho: {len(df_treino)}")
         logger.info(f"Grupos no Teste Reservado: {df_teste['id_noticia'].nunique()} | Tamanho: {len(df_teste)}")
+        logger.info(f"distribuição de classes (Treino): {df_treino['target'].value_counts().to_dict()}")
+        logger.info(f"distribuição de classes (Teste): {df_teste['target'].value_counts().to_dict()}")
         
         treinar_stacking(df_treino=df_treino, df_val=df_teste, output_path=target_joblib)
     else:

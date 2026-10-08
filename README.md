@@ -3,7 +3,7 @@
 O **Miop.IA** é uma solução para análise de credibilidade e detecção de padrões de desinformação em notícias escritas em Língua Portuguesa. O sistema é composto por:
 1. **Extensão para Google Chrome (Manifest V3):** Interface client-side para extração contextual do corpo da matéria e exibição do diagnóstico.
 2. **API Backend em Python (FastAPI):** Servidor ASGI assíncrono para validação textual, extração de features, inferência estruturada e registro de feedback comunitário.
-3. **Pipeline de Machine Learning (Stacking Ensemble Multivisão):** Classificador ensemble híbrido combinando estilometria avançada (MATTR, POS tags, ortografia), modelagem temática (LDA e NMF), $n$-gramas em nível de caractere/palavra e metamodelo supervisionado (F1 atual $\approx 0.67$ aferido no manifesto).
+3. **Pipeline de Machine Learning (Stacking Ensemble Multivisão):** Classificador ensemble híbrido combinando estilometria avançada (MATTR, POS tags, ortografia), modelagem temática (LDA e NMF), $n$-gramas em nível de caractere/palavra e metamodelo supervisionado (F1 atual $\approx 0.97$ aferido no manifesto).
 
 ---
 
