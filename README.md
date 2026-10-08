@@ -34,7 +34,7 @@ O **Miop.IA** é uma solução para análise de credibilidade e detecção de pa
 
 | Caminho | Descrição Técnica |
 |---|---|
-| [`miopia/`](file:///c:/Users/25894064/Documents/miopia_product/miopia) | **Extensão Google Chrome (Manifest V3):** Scripts de conteúdo (`scripts/content.js`), popup de interface (`popup.html`, `popup.js`, `popup.css`), manifesto e service worker. |
+| [`frontend/`](file:///c:/Users/25894064/Documents/miopia_product/frontend) | **Extensão Google Chrome (Manifest V3):** Scripts de conteúdo (`scripts/content.js`), popup de interface (`popup.html`, `popup.js`, `popup.css`), manifesto e service worker. |
 | [`backend/api/`](file:///c:/Users/25894064/Documents/miopia_product/backend/api) | **Núcleo da API FastAPI:** Endpoints REST (`main.py`), modelos de dados Pydantic (`schemas.py`), ORM SQLAlchemy (`models.py`, `database.py`), configurações (`config.py`), sanitização/validação (`filtro.py`), extrator estilométrico (`feature_extraction.py`) e orquestrador de inferência (`inferencia.py`). |
 | [`backend/models/`](file:///c:/Users/25894064/Documents/miopia_product/backend/models) | **Artefatos Treinados de IA:** Pacote serializado (`stacking_miopia_v1.joblib`) e respectivo manifesto em JSON (`model_manifest.json`) com registro de `python_version`, `scikit-learn`, `xgboost`, `spacy`, `spacy_model`, `F1`, `threshold`, `feature_count`, `n_train`, `n_test`, `training_date`, etc. |
 | [`backend/train/`](file:///c:/Users/25894064/Documents/miopia_product/backend/train) | **Módulo de Treinamento e Calibração:** Script de treinamento (`train.py`) com validação cruzada, ajuste de hiperparâmetros e exportação de artefatos. |

@@ -76,8 +76,14 @@ def get_or_create_modelo(db: Session, model_info: dict) -> Modelo:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # As tabelas agora são gerenciadas pelo Alembic. 
-    # Use 'alembic upgrade head' para inicializar o banco.
+    # As tabelas são gerenciadas pelo Alembic ('alembic upgrade head' / scripts/init_db.py).
+    # Bundle ausente, corrompido ou incompatível impede a API de subir (MI-17).
+    try:
+        bundle = carregar_bundle_stacking()
+    except ModeloInvalidoError as e:
+        logger.critical(f"Modelo de produção inválido; abortando startup: {e}")
+        raise
+    logger.info(f"Modelo de produção pronto: {resumo_bundle(bundle)}")
     yield
 
 
@@ -120,16 +126,21 @@ def obter_bundle_ou_503():
         logger.error(f"Modelo de produção indisponível: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Modelo de classificação indisponível.",
+            detail="Modelo de classificação indisponível: o modelo não está carregado.",
         )
 
 
 @app.get("/health", tags=["Monitoramento"])
 def health_check():
     """Retorna sucesso caso a API esteja operando."""
-    model_info = get_current_model_info()
-    f1_str = f" (F1={model_info['f1']:.3f})" if model_info.get("f1") else ""
-    return {"status": "online", "environment": settings.environment, "model": f"Stacking Parte C{f1_str}"}
+    meta = resumo_bundle(obter_bundle_ou_503())
+    return {
+        "status": "online",
+        "environment": settings.environment,
+        "model": f"Stacking {meta['version']} (F1={meta['f1_score']:.3f})",
+        "model_version": meta["version"],
+        "feature_count": meta["feature_count"],
+    }
 
 
 @app.get("/ready", tags=["Monitoramento"])
@@ -236,7 +247,7 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
     
     try:
         prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
-    except (FileNotFoundError, RuntimeError) as e:
+    except ModeloInvalidoError as e:
         logger.error(f"Erro na inferência: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

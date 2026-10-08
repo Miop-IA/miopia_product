@@ -19,11 +19,19 @@ BUNDLE_TESTE_PATH = os.path.join(_TMP_DIR, "stacking_teste.joblib")
 
 def _gerar_bundle_teste() -> None:
     import numpy as np
+    from sklearn.model_selection import GroupShuffleSplit
     from train.train import gerar_dados_sinteticos_para_teste, treinar_stacking
 
     np.random.seed(42)
-    df = gerar_dados_sinteticos_para_teste(n_samples=80)
-    treinar_stacking(df, output_path=BUNDLE_TESTE_PATH, version="sintetico-teste")
+    df = gerar_dados_sinteticos_para_teste(n_samples=200)
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    idx_treino, idx_val = next(gss.split(df, groups=df["id_noticia"]))
+    treinar_stacking(
+        df.iloc[idx_treino],
+        df_val=df.iloc[idx_val],
+        output_path=BUNDLE_TESTE_PATH,
+        version="sintetico-teste",
+    )
 
 
 _gerar_bundle_teste()

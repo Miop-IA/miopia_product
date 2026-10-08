@@ -53,7 +53,7 @@ function runExtractionOnHtml(htmlContent, url) {
     return result;
 }
 
-function runBenchmark() {
+async function runBenchmark() {
     console.log("==========================================");
     console.log("   Miop.IA - Benchmark de Extração        ");
     console.log("==========================================\n");
@@ -78,7 +78,7 @@ function runBenchmark() {
     let totalTests = 0;
     let passedTests = 0;
 
-    htmlFiles.forEach(htmlFile => {
+    for (const htmlFile of htmlFiles) {
         const baseName = htmlFile.replace('.html', '');
         const jsonFile = `${baseName}.json`;
         
@@ -150,12 +150,41 @@ function runBenchmark() {
             });
         }
 
+        // Validação E2E (API + Classificação)
+        if (isPass) {
+            try {
+                const response = await fetch("http://localhost:8000/analisar", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ texto: result.text, url: url, num_links: result.links || 0 })
+                });
+
+                if (!response.ok) {
+                    console.log(`  ❌ Erro da API: ${response.status}`);
+                    isPass = false;
+                } else {
+                    const data = await response.json();
+                    console.log(`  ✅ Classificação E2E: Faixa '${data.faixa}', Probabilidade ${(data.prob_suspeita*100).toFixed(1)}%`);
+                    if (!data.faixa || data.prob_suspeita === undefined) {
+                        console.log(`  ❌ Resposta da API sem os campos esperados (faixa/prob_suspeita).`);
+                        isPass = false;
+                    }
+                    if (expected.expected_class && data.faixa !== expected.expected_class) {
+                        console.log(`  ❌ Divergência E2E: Esperado '${expected.expected_class}', Obtido '${data.faixa}'`);
+                        isPass = false;
+                    }
+                }
+            } catch (err) {
+                console.log(`  ❌ Falha de rede E2E: ${err.message}. A API FastAPI está rodando na porta 8000?`);
+                isPass = false;
+            }
+        }
+
         if (isPass) {
             passedTests++;
             console.log(`  🎉 Teste passou.`);
         }
-    });
-
+    }
     console.log(`\n==========================================`);
     console.log(`Resumo: ${passedTests}/${totalTests} testes bem sucedidos.`);
     if (passedTests !== totalTests) {
