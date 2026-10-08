@@ -21,24 +21,10 @@ from xgboost import XGBClassifier
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("train_stacking")
 
-# 15 características estilométricas
-ESTILO_FEATURE_NAMES = [
-    "trunc_pausality",
-    "trunc_emotiveness",
-    "trunc_diversity",  # MATTR com janela de 25 palavras
-    "trunc_upper_case_density",
-    "trunc_verb_density",
-    "trunc_noun_density",
-    "trunc_adj_density",
-    "trunc_adv_density",
-    "trunc_pron_density",
-    "link_density",
-    "rc_spelling_errors",
-    "rc_modal_verbs_density",
-    "rc_subj_imp_verbs_density",
-    "rc_pron_1_2_sing_density",
-    "rc_pron_1_plur_density",
-]
+# 15 características estilométricas definidas via Contrato Oficial Unificado
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from api.feature_contract import ESTILO_FEATURE_NAMES
 
 
 def extrair_vetor_k_mais_3(model, X_text_transformed: np.ndarray) -> np.ndarray:
