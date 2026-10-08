@@ -59,3 +59,17 @@ jobs:
       run: |
         cd backend
         python -c "import logging; logging.basicConfig(level=logging.INFO); from api.inferencia import carregar_bundle_stacking; carregar_bundle_stacking(); print('Modelo validado como conjunto único!')"
+
+    - name: Validação E2E (Sistema Real na Rede)
+      env:
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
+      run: |
+        cd backend
+        uvicorn api.main:app --host 0.0.0.0 --port 8000 &
+        sleep 3
+        # POST /analisar
+        RESPONSE=$(curl -s -X POST http://localhost:8000/analisar -H "Content-Type: application/json" -d '{"texto": "O Ministério da Fazenda divulgou hoje uma nota oficial com as diretrizes econômicas e parâmetros fiscais que serão apresentados aos governadores na reunião marcada para o início do próximo mês em Brasília, com o objetivo de equilibrar as contas públicas e impulsionar novos investimentos estruturais no país.", "url": "http://teste.com"}')
+        echo "Resposta /analisar: $RESPONSE"
+        ID=$(echo $RESPONSE | python -c "import sys, json; print(json.load(sys.stdin)['id'])")
+        # POST /avaliar
+        curl -s -X POST http://localhost:8000/avaliar -H "Content-Type: application/json" -d "{\"noticia_id\": \"$ID\", \"client_id\": \"ci-runner\", \"avaliacao\": 1}"
