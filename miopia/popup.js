@@ -33,7 +33,7 @@ document.getElementById("btnRead").addEventListener("click", async () => {
       if (msgErr.message.includes("Receiving end does not exist") || msgErr.message.includes("Could not establish connection")) {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ["scripts/content.js"]
+          files: ["scripts/readability.js", "scripts/content.js"]
         });
         await new Promise((resolve) => setTimeout(resolve, 100));
         response = await sendMessagePromise(tab.id, { action: "READ_NEWS" });
