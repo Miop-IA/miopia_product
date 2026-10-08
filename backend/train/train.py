@@ -261,8 +261,11 @@ def treinar_stacking(
         "scaler_estilo": scaler_estilo,
         "xgb_denso": xgb_denso,
         "meta_modelo": meta_lr,
-        "limiar": 0.46,
-        "f1_score": 0.961,
+        "limiar": limiar_decisao,
+        "f1_score": float(f1_obtido),
+        "n_exemplos_treino": len(df_treino),
+        "n_exemplos_teste": len(df_eval) if df_val is not None else 0,
+        "dataset_version": "fake_br_master + dataset_11",
         "feature_names_estilo": ESTILO_FEATURE_NAMES,
     }
 
@@ -318,7 +321,7 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
 
 if __name__ == "__main__":
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    target_joblib = os.path.join(base_dir, "models", "stacking_miopia_0961.joblib")
+    target_joblib = os.path.join(base_dir, "models", "stacking_miopia_v1.joblib")
 
     caminho_11 = os.path.join(base_dir, "api", "data", "dataset_11.csv")
     caminho_master = os.path.join(base_dir, "api", "data", "fake_br_master.csv")
