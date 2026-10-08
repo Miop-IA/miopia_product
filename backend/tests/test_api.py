@@ -50,6 +50,10 @@ def setup_database():
     yield
     if is_sqlite:
         Base.metadata.drop_all(bind=engine)
+    else:
+        with engine.begin() as conn:
+            for table in reversed(Base.metadata.sorted_tables):
+                conn.execute(table.delete())
 
 
 TEXTO_VALIDO_LONGO = (

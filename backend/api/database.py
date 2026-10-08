@@ -21,7 +21,7 @@ if db_url.startswith("sqlite"):
 else:
     # Configuração de produção para PostgreSQL (Neon / Render)
     connect_args = {"connect_timeout": 10}
-    if "sslmode" not in db_url:
+    if "sslmode" not in db_url and "localhost" not in db_url and "127.0.0.1" not in db_url:
         connect_args["sslmode"] = "require"
 
     engine = create_engine(
