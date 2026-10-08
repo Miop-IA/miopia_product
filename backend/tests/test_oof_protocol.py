@@ -40,7 +40,7 @@ def test_garantia_kfold_sem_vazamento():
     # 2. Cada amostra aparece exatamente uma vez na validação
     assert sorted(val_indices) == list(range(len(df_treino))), "Protocolo OOF falhou: as predições de validação não cobrem todo o dataset exatamente uma vez."
 
-def test_metamodelo_usa_oof():
+def test_metamodelo_usa_oof(tmp_path):
     """
     Roda um mock do treinamento com um dataset minúsculo para provar que a
     Regressão Logística (Metamodelo) recebe como entrada de treino as
@@ -71,9 +71,8 @@ def test_metamodelo_usa_oof():
 
     with patch("train.train.LogisticRegression.fit", fake_fit):
         with patch("train.train.joblib.dump"): # Evita salvar no disco de verdade
-            fake_path = os.path.join(os.getcwd(), "fake_path.joblib")
-            with patch("os.makedirs"): # Evita criar diretório também
-                treinar_stacking(df_dummy, df_val=df_val, output_path=fake_path)
+            fake_path = os.path.join(tmp_path, "fake_path.joblib")
+            treinar_stacking(df_dummy, df_val=df_val, output_path=fake_path)
     
     # Verifica se a regressão logística foi chamada
     assert len(captured_shapes) > 0, "O metamodelo (LogisticRegression) não foi treinado."

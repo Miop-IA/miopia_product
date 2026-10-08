@@ -38,11 +38,12 @@ def caminho_modelo() -> str:
 
 def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
     """
-    Carrega e valida o bundle do Stacking. Nunca cria modelo substituto:
-    - arquivo ausente            -> ModeloAusenteError
-    - arquivo corrompido         -> ModeloCorrompidoError
-    - chave/dimensão/classe/meta -> BundleIncompativelError
-    O bundle só é colocado em cache depois de passar por todas as validações.
+    Carrega o pacote de artefatos do Stacking:
+    - tfidf_char + svm_caracteres
+    - tfidf_word + svm_palavras
+    - lda_8, nmf_8, lda_30, nmf_30
+    - xgb_denso (estilo + temas)
+    - meta_modelo (Regressão Logística com corte dinâmico)
     """
     global _stacking_bundle
     if _stacking_bundle is not None and caminho is None:
@@ -55,14 +56,32 @@ def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
             _stacking_bundle = joblib.load(model_path)
             
             # Validação do Bundle Incompleto
-            required_keys = ["tfidf_char", "svm_caracteres", "tfidf_word", "svm_palavras", "xgb_denso", "meta_modelo", "limiar", "f1_score"]
+            required_keys = [
+                "tfidf_char", "svm_caracteres", 
+                "tfidf_word", "svm_palavras", 
+                "tfidf_lemmas", "lda_8", "nmf_8", "lda_30", "nmf_30", 
+                "scaler_estilo", "xgb_denso", "meta_modelo", "limiar", "f1_score"
+            ]
             for k in required_keys:
                 if k not in _stacking_bundle:
                     raise RuntimeError(f"Bundle corrompido: chave obrigatória '{k}' ausente.")
                     
-            # Validação da dimensão do XGBoost
+            # Validação Dimensional Completa
             if hasattr(_stacking_bundle["xgb_denso"], "n_features_in_") and _stacking_bundle["xgb_denso"].n_features_in_ != 103:
-                raise RuntimeError("Dimensão errada: O modelo não possui 103 features.")
+                raise RuntimeError("Dimensão errada: O modelo denso não possui 103 features.")
+                
+            meta_modelo = _stacking_bundle["meta_modelo"]
+            n_meta = getattr(meta_modelo, "n_features_in_", meta_modelo.coef_.shape[1])
+            if n_meta != 3:
+                raise RuntimeError(f"Dimensão errada: O metamodelo deve ter 3 entradas, obteve {n_meta}.")
+                
+            for nome_modelo, n_topicos in [("lda_8", 8), ("nmf_8", 8), ("lda_30", 30), ("nmf_30", 30)]:
+                if _stacking_bundle[nome_modelo].n_components != n_topicos:
+                    raise RuntimeError(f"Dimensão errada: {nome_modelo} não possui {n_topicos} tópicos.")
+                    
+            vocab_size = len(_stacking_bundle["tfidf_lemmas"].vocabulary_)
+            if hasattr(_stacking_bundle["lda_8"], "n_features_in_") and _stacking_bundle["lda_8"].n_features_in_ != vocab_size:
+                raise RuntimeError("Incompatibilidade: tfidf_lemmas não alinhado com os modelos de tópicos.")
                 
             # Validação do Manifesto
             manifest_path = os.path.join(base_dir, "models", "model_manifest.json")
@@ -94,22 +113,11 @@ def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
 
 
 def extrair_features_topicos(texto_lematizado: str, bundle: Dict[str, Any]) -> np.ndarray:
-    """
-    Extrai as 88 features temáticas (k+3 por modelo: distribuição soft, entropia, theta_max, ajuste)
-    na ordem LDA8, NMF8, LDA30, NMF30. Sem fallback: modelo ausente é erro.
-    """
-    faltando = [chave for chave, _, _ in BLOCOS_TEMATICOS if chave not in bundle]
-    if "tfidf_lemmas" not in bundle:
-        faltando.append("tfidf_lemmas")
-    if faltando:
-        raise BundleIncompativelError([f"modelos temáticos ausentes: {', '.join(faltando)}"])
-
+    """Extrai features temáticas contínuas (k+3: distribuição soft, entropia, theta_max, ajuste)."""
     vec_lemmas = bundle["tfidf_lemmas"].transform([texto_lematizado])
     vecs = []
-    for chave, _, k in BLOCOS_TEMATICOS:
-        theta = bundle[chave].transform(vec_lemmas)[0]
-        if theta.shape[0] != k:
-            raise BundleIncompativelError([f"{chave} retornou {theta.shape[0]} temas, esperado {k}"])
+    for model in [bundle["lda_8"], bundle["nmf_8"], bundle["lda_30"], bundle["nmf_30"]]:
+        theta = model.transform(vec_lemmas)[0]
         soma = float(np.sum(theta))
         theta_norm = theta / soma if soma > 0 else theta
         eps = 1e-9
@@ -118,11 +126,7 @@ def extrair_features_topicos(texto_lematizado: str, bundle: Dict[str, Any]) -> n
         theta_max = float(np.max(theta_norm))
         ajuste = float(soma)
         vecs.extend(list(theta_norm) + [entropia, theta_max, ajuste])
-
-    vetor = np.array(vecs, dtype=np.float32)
-    if vetor.shape[0] != N_FEATURES_TEMAS:
-        raise BundleIncompativelError([f"vetor temático com {vetor.shape[0]} features, esperado {N_FEATURES_TEMAS}"])
-    return vetor
+    return np.array(vecs, dtype=np.float32)
 
 
 def classificar_faixa_e_orientacao(prob_fake: float, limiar: float, f1_score: float = None) -> Tuple[str, str]:
@@ -188,10 +192,8 @@ def predizer_risco_stacking(
     Inferência completa do Stacking Ensemble:
     1. svm_caracteres: TF-IDF (char 3-5) no texto cru
     2. svm_palavras: TF-IDF (1-2 gramas) no texto limpo
-    3. xgb_denso: Estilo (15 features) + Temas LDA/NMF (k=8 e k=30) = 103 features
-    4. Meta-modelo: Regressão Logística com o limiar do bundle
-
-    Levanta ModeloInvalidoError se o modelo de produção não estiver disponível e válido.
+    3. xgb_denso: Estilo (15 features) + Temas LDA/NMF (k=8 e k=30)
+    4. Meta-modelo: Regressão Logística com limiar dinâmico do bundle
     """
     bundle = carregar_bundle_stacking()
     prob_fake_final = _inferir(bundle, features_estilo, textos)
@@ -210,11 +212,8 @@ def predizer_risco_stacking(
 
     # 3. Ramo XGBoost Denso
     vetor_estilo_raw = [features_estilo[f] for f in ESTILO_FEATURE_NAMES]
-    scaler_estilo = bundle.get("scaler_estilo")
-    if scaler_estilo is not None:
-        vetor_estilo = scaler_estilo.transform([vetor_estilo_raw])[0]
-    else:
-        vetor_estilo = vetor_estilo_raw
+    scaler_estilo = bundle["scaler_estilo"]
+    vetor_estilo = scaler_estilo.transform([vetor_estilo_raw])[0]
         
     vetor_temas = extrair_features_topicos(textos["texto_lematizado"], bundle)
     X_denso = np.concatenate([vetor_estilo, vetor_temas]).reshape(1, -1)

@@ -28,7 +28,7 @@ def test_extracao_pacote_features():
 
 
 def test_inferencia_stacking_e_limiar():
-    """Testa se o modelo serializado processa as predições e aplica o limiar 0.46."""
+    """Testa se o modelo serializado processa as predições e aplica o limiar dinâmico."""
     texto = (
         "URGENTE repasse agora mesmo veja o que o governo escondeu de você escândalo "
         "confirmado pela imprensa independente compartilhe já antes que apaguem tudo."
@@ -199,10 +199,10 @@ def test_dimensoes_incompativeis(monkeypatch):
 
 
 def test_classes_e_threshold():
-    """Valida os edge cases de threshold 0.46 e distâncias."""
+    """Valida os edge cases de threshold dinâmico e distâncias."""
     from api.inferencia import classificar_faixa_e_orientacao
     
-    # Limiar padrão = 0.46
+    # Testando com limiar fixado em 0.46 para a matemática do teste
     # Confiavel < 0.31
     # Atencao <= 0.61
     # Suspeita > 0.61

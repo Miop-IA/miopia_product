@@ -221,16 +221,29 @@ def treinar_stacking(
     logger.info(f"Pesos do Meta-Modelo (Char, Word, Denso): {meta_lr.coef_[0]}")
 
     # -------------------------------------------------------------
-    # 6. Avaliação e Verificação do Limiar 0.46
+    # 6. Avaliação e Seleção do Limiar via OOF (Sem Tocar no Teste)
     # -------------------------------------------------------------
-    limiar_decisao = 0.46
+    logger.info("A calcular limiar ótimo via F1-score no conjunto OOF...")
+    p_fake_oof = meta_lr.predict_proba(X_meta_train)[:, 1]
+    
+    melhor_limiar = 0.5
+    melhor_f1_oof = 0.0
+    
+    for lim in np.arange(0.1, 0.9, 0.01):
+        y_pred_cand = (p_fake_oof >= lim).astype(int)
+        f1_cand = f1_score(y_train, y_pred_cand, pos_label=1)
+        if f1_cand > melhor_f1_oof:
+            melhor_f1_oof = f1_cand
+            melhor_limiar = lim
+
+    limiar_decisao = round(float(melhor_limiar), 2)
+    logger.info(f"Limiar ótimo selecionado sem vazamento (OOF): {limiar_decisao} com F1={melhor_f1_oof:.4f}")
     
     # 6.1 Relatório de Desenvolvimento (OOF)
     logger.info("--- RELATÓRIO DO CONJUNTO DE DESENVOLVIMENTO (OOF) ---")
-    p_fake_oof = meta_lr.predict_proba(X_meta_train)[:, 1]
     y_pred_oof = (p_fake_oof >= limiar_decisao).astype(int)
     f1_oof = f1_score(y_train, y_pred_oof, pos_label=1)
-    logger.info(f"F1-Score OOF: {f1_oof:.4f}")
+    logger.info(f"F1-Score OOF (limiar {limiar_decisao}): {f1_oof:.4f}")
     logger.info("\n" + classification_report(y_train, y_pred_oof, target_names=["Verdadeiro", "Falso"]))
     
     # 6.2 Relatório de Teste
@@ -270,6 +283,13 @@ def treinar_stacking(
     
     logger.info(f"F1-Score Teste (limiar {limiar_decisao}): {f1_obtido:.4f}")
     logger.info("\n" + classification_report(y_eval, y_pred, target_names=["Verdadeiro", "Falso"]))
+    
+    # Validação Metodológica Absoluta
+    F1_MINIMO = 0.85
+    if f1_obtido < F1_MINIMO:
+        erro_msg = f"Treinamento abortado: F1-Score obtido ({f1_obtido:.4f}) está abaixo do mínimo exigido ({F1_MINIMO}). O modelo não será empacotado."
+        logger.error(erro_msg)
+        raise RuntimeError(erro_msg)
 
     # -------------------------------------------------------------
     # 7. Empacotamento do Bundle de Produção
@@ -356,12 +376,18 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
     df_11 = pd.read_csv(caminho_dataset_11)
     df_master = pd.read_csv(caminho_master)
 
+    logger.info(f"n_rows_dataset_11: {len(df_11)}")
+    logger.info(f"n_rows_master: {len(df_master)}")
+
     df_unificado = pd.merge(
         df_11,
         df_master,
         on=["id_noticia", "target"],
         suffixes=("_11", "_master")
     )
+    
+    logger.info(f"n_rows_apos_merge: {len(df_unificado)}")
+    logger.info(f"n_grupos_apos_merge: {df_unificado['id_noticia'].nunique()}")
     
     import sys
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -394,25 +420,31 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
 
 
 if __name__ == "__main__":
-    import argparse
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    target_joblib = os.path.join(base_dir, "models", "stacking_miopia_v1.joblib")
 
-    parser = argparse.ArgumentParser(description="Treina o bundle Stacking Miop.IA.")
-    parser.add_argument("--dados-dir", default=os.path.join(_BACKEND_DIR, "api", "data"),
-                        help="Pasta com dataset_11.csv e fake_br_master.csv")
-    parser.add_argument("--saida", default=os.path.join(_BACKEND_DIR, "models", "stacking_miopia_0961.joblib"))
-    parser.add_argument("--versao", default=None, help="Identificador de versão gravado no bundle")
-    parser.add_argument("--sintetico", action="store_true",
-                        help="Treina com dados sintéticos (apenas para testes; exige --saida diferente da produção)")
-    args = parser.parse_args()
+    caminho_11 = os.path.join(base_dir, "api", "data", "dataset_11.csv")
+    caminho_master = os.path.join(base_dir, "api", "data", "fake_br_master.csv")
 
-    saida_producao = os.path.abspath(os.path.join(_BACKEND_DIR, "models", "stacking_miopia_0961.joblib"))
-
-    if args.sintetico:
-        if os.path.abspath(args.saida) == saida_producao:
-            sys.exit("Recusado: bundle sintético não pode sobrescrever o artefato de produção. Use --saida.")
-        logger.warning("Treinando com dados SINTÉTICOS (somente teste).")
-        df_mock = gerar_dados_sinteticos_para_teste(n_samples=80)
-        treinar_stacking(df_mock, output_path=args.saida, version=args.versao or "sintetico-teste")
+    if os.path.exists(caminho_11) and os.path.exists(caminho_master):
+        logger.info(f"A carregar bases reais: {caminho_11} e {caminho_master}")
+        df_completo = carregar_dados_reais(caminho_11, caminho_master)
+        
+        # Divisão com GroupShuffleSplit para que pares da mesma id_noticia não se separem
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        train_idx, test_idx = next(gss.split(df_completo, groups=df_completo["id_noticia"]))
+        
+        df_treino = df_completo.iloc[train_idx]
+        df_teste = df_completo.iloc[test_idx]
+        
+        logger.info(f"n_treino: {len(df_treino)}")
+        logger.info(f"n_teste: {len(df_teste)}")
+        logger.info(f"Grupos no Treino: {df_treino['id_noticia'].nunique()} | Tamanho: {len(df_treino)}")
+        logger.info(f"Grupos no Teste Reservado: {df_teste['id_noticia'].nunique()} | Tamanho: {len(df_teste)}")
+        logger.info(f"distribuição de classes (Treino): {df_treino['target'].value_counts().to_dict()}")
+        logger.info(f"distribuição de classes (Teste): {df_teste['target'].value_counts().to_dict()}")
+        
+        treinar_stacking(df_treino=df_treino, df_val=df_teste, output_path=target_joblib)
     else:
         caminho_11 = os.path.join(args.dados_dir, "dataset_11.csv")
         caminho_master = os.path.join(args.dados_dir, "fake_br_master.csv")
