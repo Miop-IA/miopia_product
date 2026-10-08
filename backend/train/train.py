@@ -12,7 +12,7 @@ from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, f1_score
+from sklearn.metrics import classification_report, f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
 from sklearn.model_selection import GroupShuffleSplit, GroupKFold
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
@@ -231,6 +231,11 @@ def treinar_stacking(
     y_pred = (p_fake_final >= limiar_decisao).astype(int)
 
     f1_obtido = f1_score(y_eval, y_pred, pos_label=1)
+    prec_obtido = precision_score(y_eval, y_pred, pos_label=1)
+    rec_obtido = recall_score(y_eval, y_pred, pos_label=1)
+    acc_obtido = accuracy_score(y_eval, y_pred)
+    cm_obtido = confusion_matrix(y_eval, y_pred).tolist()
+    
     logger.info(f"F1-Score Teste (limiar {limiar_decisao}): {f1_obtido:.4f}")
     logger.info("\n" + classification_report(y_eval, y_pred, target_names=["Verdadeiro", "Falso"]))
 
@@ -252,8 +257,14 @@ def treinar_stacking(
         "meta_modelo": meta_lr,
         "limiar": limiar_decisao,
         "f1_score": float(f1_obtido),
+        "precision": float(prec_obtido),
+        "recall": float(rec_obtido),
+        "accuracy": float(acc_obtido),
+        "confusion_matrix": cm_obtido,
         "n_exemplos_treino": len(df_treino),
         "n_exemplos_teste": len(df_eval),
+        "n_grupos_treino": df_treino['id_noticia'].nunique() if 'id_noticia' in df_treino.columns else 0,
+        "n_grupos_teste": df_eval['id_noticia'].nunique() if 'id_noticia' in df_eval.columns else 0,
         "dataset_version": "fake_br_master + dataset_11",
         "feature_names_estilo": ESTILO_FEATURE_NAMES,
     }
@@ -281,6 +292,14 @@ def treinar_stacking(
                 "spacy_model": "pt_core_news_lg",
                 "threshold": bundle["limiar"],
                 "F1": bundle["f1_score"],
+                "precision": bundle["precision"],
+                "recall": bundle["recall"],
+                "accuracy": bundle["accuracy"],
+                "confusion_matrix": bundle["confusion_matrix"],
+                "n_treino": bundle["n_exemplos_treino"],
+                "n_teste": bundle["n_exemplos_teste"],
+                "n_grupos_treino": bundle["n_grupos_treino"],
+                "n_grupos_teste": bundle["n_grupos_teste"],
                 "feature_count": int(bundle["xgb_denso"].n_features_in_),
                 "training_date": datetime.datetime.now().isoformat()
             }
