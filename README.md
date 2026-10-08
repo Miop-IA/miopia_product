@@ -75,7 +75,7 @@ O classificador não se apoia exclusivamente em palavras-chave contextuais, util
 ## 🚀 Guia de Reprodução e Execução Local
 
 ### Pré-requisitos
-* **Python 3.12 (64-bit)** (Recomendado para compatibilidade binária nativa com spaCy, scikit-learn e NumPy).
+* **Python 3.13.3 (64-bit)** (Recomendado para compatibilidade exata com o ambiente de treinamento e dependências de NLP/ML).
 * **Navegador Google Chrome** (ou navegadores baseados em Chromium com suporte a Manifest V3).
 
 ### 1. Configuração do Backend
