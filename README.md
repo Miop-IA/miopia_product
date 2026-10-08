@@ -156,7 +156,7 @@ O projeto foi desenhado sob as diretrizes de **Privacy by Design** e a Lei Geral
 
 1. **Minimização de Dados (Art. 6º, III):**
    * A extensão não realiza coleta passiva ou em segundo plano. O envio ocorre exclusivamente sob comando explícito do usuário (*"Ler e Analisar Notícia"*).
-   * O banco de dados em produção utiliza hashing criptográfico **SHA-256** para identificar artigos em cache, evitando a retenção permanente desnecessária de textos completos.
+   * O banco de dados em produção utiliza hashing criptográfico **SHA-256** para identificar artigos em cache, evitando a retenção permanente do texto bruto. O sistema armazena unicamente uma versão sanitizada e truncada (limite máximo de 500 palavras), estritamente necessária para reprodução iterativa das métricas e auditoria técnica do classificador.
 2. **Anonimização de Feedback (Art. 12):**
    * Os votos da comunidade utilizam um identificador aleatório de cliente (`X-Client-Id`), sem coleta de nomes, e-mails, endereços IP ou credenciais do usuário.
 3. **Limitação de Taxa (*Rate Limiting*):**
