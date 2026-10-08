@@ -1,22 +1,41 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from api.database import Base
 
 
 
+class Modelo(Base):
+    __tablename__ = "modelos"
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
+    model_version = Column(String(50), nullable=False)
+    pipeline_version = Column(String(50), nullable=False)
+    dataset_version = Column(String(100), nullable=False)
+    f1 = Column(Float, nullable=False)
+    threshold = Column(Float, nullable=False)
+    
+    criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('model_version', 'pipeline_version', name='_model_pipeline_uc'),
+    )
+
+    noticias = relationship("Noticia", back_populates="modelo")
+
 class Noticia(Base):
     __tablename__ = "noticias"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    hash_texto = Column(String(64), unique=True, index=True, nullable=False)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
+    hash_texto = Column(String(64), index=True, nullable=False)
     url = Column(String(500), nullable=True)
     texto = Column(Text, nullable=False)
+    texto_truncado = Column(Text, nullable=True)
+    modelo_id = Column(BigInteger, ForeignKey("modelos.id"), nullable=False)
     
     # Métricas preditivas
     prob_suspeita = Column(Float, nullable=False)
     faixa = Column(String(30), nullable=False)
-    modelo_f1 = Column(Float, default=0.961)
 
     # 15 Características Estilométricas (com MATTR-25 em trunc_diversity)
     trunc_pausality = Column(Float, nullable=False)
@@ -37,6 +56,12 @@ class Noticia(Base):
 
     criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    modelo = relationship("Modelo", back_populates="noticias")
+
+    __table_args__ = (
+        UniqueConstraint('hash_texto', 'modelo_id', name='_hash_modelo_uc'),
+    )
+
     # Relacionamento com as avaliações da comunidade
     avaliacoes = relationship("Avaliacao", back_populates="noticia", cascade="all, delete-orphan")
 
@@ -44,9 +69,9 @@ class Noticia(Base):
 class Avaliacao(Base):
     __tablename__ = "avaliacoes"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    noticia_id = Column(Integer, ForeignKey("noticias.id", ondelete="CASCADE"), nullable=False)
-    client_id = Column(String(100), nullable=False, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
+    noticia_id = Column(BigInteger, ForeignKey("noticias.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(String(36), nullable=False, index=True)
     
     # 0 = Verdadeiro, 1 = Duvidoso, 2 = Falso
     avaliacao = Column(Integer, nullable=False)

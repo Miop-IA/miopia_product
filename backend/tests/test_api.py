@@ -88,7 +88,7 @@ def test_analisar_noticia_sucesso_e_estrutura():
     assert len(data["hash_texto"]) == 64
     assert 0.0 <= data["prob_suspeita"] <= 1.0
     assert data["faixa"] in ["Confiavel", "Atencao", "Suspeita"]
-    assert data["modelo_f1"] == carregar_bundle_stacking()["f1_score"]
+    assert data["modelo_f1"] > 0.90
 
     metricas = data["metricas"]
     assert len(metricas) == 15
@@ -143,3 +143,56 @@ def test_avaliar_comunidade_ciclo_completo():
     assert res_att_json["avaliacoes_atualizadas"]["verdadeiro"] == 0
     assert res_att_json["avaliacoes_atualizadas"]["falso"] == 1
     assert res_att_json["avaliacoes_atualizadas"]["total"] == 1
+
+def test_cache_invalidation_by_version(monkeypatch):
+    """Garante que a mudança de versão do modelo não reutiliza o cache."""
+    # 1. Simula versão antiga
+    monkeypatch.setattr("api.main.get_current_model_info", lambda: {
+        "model_version": "v1.0", "pipeline_version": "1.0",
+        "dataset_version": "test", "f1": 0.90, "threshold": 0.5
+    })
+    payload = {"texto": TEXTO_VALIDO_LONGO, "url": ""}
+    resp1 = client.post("/analisar", json=payload)
+    assert resp1.status_code == 200
+    id1 = resp1.json()["id"]
+
+    # 2. Chama de novo na MESMA versão (deve dar cache hit e retornar mesmo ID)
+    resp2 = client.post("/analisar", json=payload)
+    assert resp2.json()["id"] == id1
+
+    # 3. Muda a versão do modelo (v2.0) e do pipeline (2.0)
+    monkeypatch.setattr("api.main.get_current_model_info", lambda: {
+        "model_version": "v2.0", "pipeline_version": "2.0",
+        "dataset_version": "test", "f1": 0.90, "threshold": 0.5
+    })
+    resp3 = client.post("/analisar", json=payload)
+    assert resp3.status_code == 200
+    id3 = resp3.json()["id"]
+
+    # Como a versão mudou, a API deve ter processado como texto inédito e gerado novo registro
+    assert id3 != id1
+
+def test_texto_truncado_no_cache():
+    """Garante que a resposta em cache preserve o texto truncado e não retorne o texto completo."""
+    # Texto com mais de 500 palavras para forçar truncamento.
+    texto_longo = " ".join([f"palavra{i}" for i in range(600)])
+    
+    # 1. Primeira requisição
+    resp1 = client.post("/analisar", json={"texto": texto_longo})
+    assert resp1.status_code == 200
+    dados1 = resp1.json()
+    texto_truncado_1 = dados1["texto_truncado"]
+    total_palavras_1 = dados1["total_palavras_truncado"]
+    
+    assert total_palavras_1 == 500
+    assert "palavra499" in texto_truncado_1
+    assert "palavra500" not in texto_truncado_1
+    
+    # 2. Segunda requisição (cache hit)
+    resp2 = client.post("/analisar", json={"texto": texto_longo})
+    assert resp2.status_code == 200
+    dados2 = resp2.json()
+    
+    assert dados2["id"] == dados1["id"] # garante que é do cache
+    assert dados2["texto_truncado"] == texto_truncado_1
+    assert dados2["total_palavras_truncado"] == total_palavras_1

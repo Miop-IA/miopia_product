@@ -56,6 +56,8 @@ class AnaliseResponse(BaseModel):
     prob_suspeita: float
     faixa: str
     modelo_f1: float
+    model_version: Optional[str] = None
+    pipeline_version: Optional[str] = None
     orientacao: str
     metricas: MetricasEstilometricas
     avaliacoes_comunidade: ContagemAvaliacoes

@@ -5,9 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+import json
+
 from api.config import get_settings
 from api.database import engine, Base, get_db
-from api.models import Noticia, Avaliacao
+from api.models import Noticia, Avaliacao, Modelo
 from api.schemas import (
     AnaliseRequest,
     AnaliseResponse,
@@ -29,22 +31,53 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("miopia_api")
 settings = get_settings()
 
+def get_current_model_info() -> dict:
+    import os
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    manifest_path = os.path.join(base_dir, "models", "model_manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return {
+                    "model_version": data.get("model_version", "unknown"),
+                    "pipeline_version": data.get("pipeline_version", "unknown"),
+                    "dataset_version": data.get("dataset_version", "unknown"),
+                    "f1": float(data.get("F1", 0.0)),
+                    "threshold": float(data.get("threshold", 0.0))
+                }
+        except Exception as e:
+            logger.error(f"Erro ao ler model_manifest.json: {e}")
+    return {
+        "model_version": "unknown", "pipeline_version": "unknown",
+        "dataset_version": "unknown", "f1": 0.0, "threshold": 0.0
+    }
+
+def get_or_create_modelo(db: Session, model_info: dict) -> Modelo:
+    modelo = db.query(Modelo).filter(
+        Modelo.model_version == model_info["model_version"],
+        Modelo.pipeline_version == model_info["pipeline_version"]
+    ).first()
+    
+    if not modelo:
+        modelo = Modelo(
+            model_version=model_info["model_version"],
+            pipeline_version=model_info["pipeline_version"],
+            dataset_version=model_info["dataset_version"],
+            f1=model_info["f1"],
+            threshold=model_info["threshold"]
+        )
+        db.add(modelo)
+        db.commit()
+        db.refresh(modelo)
+    
+    return modelo
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Bundle ausente, corrompido ou incompatível impede a API de ficar pronta.
-    try:
-        bundle = carregar_bundle_stacking()
-    except ModeloInvalidoError as e:
-        logger.critical(f"Modelo de produção inválido; abortando startup: {e}")
-        raise
-    logger.info(f"Modelo de produção pronto: {resumo_bundle(bundle)}")
-
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Tabelas inicializadas com sucesso.")
-    except Exception as e:
-        logger.warning(f"Aviso de banco: {e}")
+    # As tabelas agora são gerenciadas pelo Alembic. 
+    # Use 'alembic upgrade head' para inicializar o banco.
     yield
 
 
@@ -113,16 +146,19 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=motivo)
 
     hash_txt = gerar_hash_texto(texto_puro)
+    model_info = get_current_model_info()
+    modelo_atual = get_or_create_modelo(db, model_info)
 
     # 1. Consulta em Cache O(1)
-    noticia_existente = db.query(Noticia).filter(Noticia.hash_texto == hash_txt).first()
+    noticia_existente = db.query(Noticia).filter(
+        Noticia.hash_texto == hash_txt,
+        Noticia.modelo_id == modelo_atual.id
+    ).first()
 
     if noticia_existente:
         logger.info(f"Cache hit para a hash: {hash_txt}")
         avaliacoes = obter_contagem_avaliacoes(db, noticia_existente.id)
-        _, orientacao = classificar_faixa_e_orientacao(
-            noticia_existente.prob_suspeita, limiar=float(bundle["limiar"])
-        )
+        _, orientacao = classificar_faixa_e_orientacao(noticia_existente.prob_suspeita, limiar=modelo_atual.threshold)
 
         metricas_dto = MetricasEstilometricas(
             trunc_pausality=noticia_existente.trunc_pausality,
@@ -147,13 +183,15 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
             hash_texto=noticia_existente.hash_texto,
             prob_suspeita=noticia_existente.prob_suspeita,
             faixa=noticia_existente.faixa,
-            modelo_f1=noticia_existente.modelo_f1,
+            modelo_f1=modelo_atual.f1,
+            model_version=modelo_atual.model_version,
+            pipeline_version=modelo_atual.pipeline_version,
             orientacao=orientacao,
             metricas=metricas_dto,
             avaliacoes_comunidade=avaliacoes,
             features=metricas_dto.model_dump(),
-            texto_truncado=noticia_existente.texto,
-            total_palavras_truncado=len(noticia_existente.texto.split()) if noticia_existente.texto else 0,
+            texto_truncado=noticia_existente.texto_truncado or noticia_existente.texto,
+            total_palavras_truncado=len((noticia_existente.texto_truncado or noticia_existente.texto).split()) if (noticia_existente.texto_truncado or noticia_existente.texto) else 0,
         )
 
     # 2. Processamento de texto inédito
@@ -167,13 +205,16 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
             detail="Modelo de classificação indisponível.",
         )
 
+    texto_trunc = textos.get("texto_cru", texto_puro)
+
     nova_noticia = Noticia(
         url=payload.url,
         hash_texto=hash_txt,
         texto=normalizar_texto(texto_puro),
+        texto_truncado=texto_trunc,
         prob_suspeita=prob_suspeita,
         faixa=faixa,
-        modelo_f1=f1_score,
+        modelo_id=modelo_atual.id,
         **features,
     )
     db.add(nova_noticia)
@@ -190,7 +231,9 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         hash_texto=nova_noticia.hash_texto,
         prob_suspeita=nova_noticia.prob_suspeita,
         faixa=nova_noticia.faixa,
-        modelo_f1=nova_noticia.modelo_f1,
+        modelo_f1=modelo_atual.f1,
+        model_version=modelo_atual.model_version,
+        pipeline_version=modelo_atual.pipeline_version,
         orientacao=orientacao,
         metricas=metricas_dto,
         avaliacoes_comunidade=avaliacoes,
