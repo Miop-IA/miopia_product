@@ -134,7 +134,9 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500, num_links_pa
 
     texto_lematizado = " ".join([t.lemma_.lower() for t in tokens_validos if not t.is_punct and not t.is_stop])
 
-    caixa_alta_count = sum(1 for t in tokens_palavras if t.text.isupper() and len(t.text) > 1)
+    # CAIXA ALTA precisa ser contada no texto cru: texto_limpo (usado pelo spaCy) já está em minúsculas
+    palavras_cru = re.findall(r"[^\W\d_]+", texto_cru_trunc)
+    caixa_alta_count = sum(1 for w in palavras_cru if len(w) > 1 and w.isupper())
     trunc_upper_case_density = caixa_alta_count / num_words
 
     pos_counts = {"VERB": 0, "NOUN": 0, "ADJ": 0, "ADV": 0, "PRON": 0}
@@ -180,13 +182,13 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500, num_links_pa
         
         is_1_2_sing = (
             is_pron_det and person and ("1" in person or "2" in person) and number and "Sing" in number
-        ) or (t_lower in PRON_1_2_SING)
+        ) or (is_pron_det and t_lower in PRON_1_2_SING)
         if is_1_2_sing:
             pron_1_2_sing_count += 1
 
         is_1_plur = (
             is_pron_det and person and "1" in person and number and "Plur" in number
-        ) or (t_lower in PRON_1_PLUR)
+        ) or (is_pron_det and t_lower in PRON_1_PLUR)  # "nos" contração (em+os) é ADP, não pronome
         if is_1_plur:
             pron_1_plur_count += 1
 

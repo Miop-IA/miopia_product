@@ -4,8 +4,8 @@ version, feature_order e feature_count. NÃO retreina nem altera nenhum modelo:
 só grava metadados e depois roda a mesma validação que a API roda no startup.
 
 Uso (dentro de backend/):
-    python scripts/carimbar_bundle.py                       # models/stacking_miopia_v1.joblib
-    python scripts/carimbar_bundle.py --versao v1 --caminho models/stacking_miopia_v1.joblib
+    python scripts/carimbar_bundle.py                       # models/stacking_miopia_v2.joblib
+    python scripts/carimbar_bundle.py --versao v2 --caminho models/stacking_miopia_v2.joblib
 """
 import argparse
 import json
@@ -23,7 +23,7 @@ from api.inferencia import carregar_bundle_stacking  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--caminho", default=os.path.join(BACKEND_DIR, "models", "stacking_miopia_v1.joblib"))
+    parser.add_argument("--caminho", default=os.path.join(BACKEND_DIR, "models", "stacking_miopia_v2.joblib"))
     parser.add_argument("--versao", default=None, help="Padrão: model_version do model_manifest.json")
     args = parser.parse_args()
 
