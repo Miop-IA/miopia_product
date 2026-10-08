@@ -66,6 +66,13 @@ def treinar_stacking(
         raise ValueError("O conjunto de teste/validação (df_val) é obrigatório para evitar avaliação viciada no treino.")
         
     logger.info("A iniciar treino do pipeline Stacking Parte C...")
+    
+    if "id_noticia" in df_treino.columns and "id_noticia" in df_val.columns:
+        train_groups = set(df_treino["id_noticia"])
+        test_groups = set(df_val["id_noticia"])
+        if len(train_groups.intersection(test_groups)) > 0:
+            raise ValueError("Sobreposição detectada (Data Leakage)! Existem grupos (id_noticia) compartilhados entre treino e teste.")
+
     y_train = df_treino["target"].values
     groups_train = df_treino["id_noticia"].values
 

@@ -49,6 +49,25 @@ def test_filtro_viabilidade_texto_curto():
     assert total < 30
 
 
+def test_sobreposicao_treino_teste():
+    """Verifica se o treinamento aborta explicitamente caso haja vazamento de dados por id_noticia entre treino e validação."""
+    import pandas as pd
+    import sys
+    import os
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if backend_dir not in sys.path:
+        sys.path.append(backend_dir)
+        
+    from train.train import treinar_stacking
+
+    df_treino = pd.DataFrame({"id_noticia": [1, 2, 3], "target": [0, 1, 0]})
+    df_val = pd.DataFrame({"id_noticia": [3, 4, 5], "target": [0, 1, 0]})
+    
+    import pytest
+    with pytest.raises(ValueError, match="Sobreposição detectada"):
+        treinar_stacking(df_treino, df_val)
+
+
 def test_ausencia_intersecao_grupos_calibracao():
     """Verifica se o GroupKFold impede interseção de grupos entre treino e validação, garantindo calibração group-aware segura."""
     from sklearn.model_selection import GroupKFold
