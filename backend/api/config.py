@@ -20,8 +20,8 @@ class Settings(BaseSettings):
         description="URL de conexão com o banco de dados PostgreSQL"
     )
     cors_origins: Union[List[str], str] = Field(
-        default=["chrome-extension://*", "http://localhost:3000"],
-        description="Lista de origens permitidas para requisições CORS"
+        default=["http://localhost:3000"],
+        description="Lista de origens permitidas para requisições CORS. Em produção, adicione o ID da extensão."
     )
     limite_diario_por_cliente: int = Field(
         default=50,
