@@ -43,9 +43,22 @@ def carregar_bundle_stacking():
                 if k not in _stacking_bundle:
                     raise RuntimeError(f"Bundle corrompido: chave obrigatória '{k}' ausente.")
                     
-            # Validação da dimensão do XGBoost
+            # Validação Dimensional Completa
             if hasattr(_stacking_bundle["xgb_denso"], "n_features_in_") and _stacking_bundle["xgb_denso"].n_features_in_ != 103:
-                raise RuntimeError("Dimensão errada: O modelo não possui 103 features.")
+                raise RuntimeError("Dimensão errada: O modelo denso não possui 103 features.")
+                
+            meta_modelo = _stacking_bundle["meta_modelo"]
+            n_meta = getattr(meta_modelo, "n_features_in_", meta_modelo.coef_.shape[1])
+            if n_meta != 3:
+                raise RuntimeError(f"Dimensão errada: O metamodelo deve ter 3 entradas, obteve {n_meta}.")
+                
+            for nome_modelo, n_topicos in [("lda_8", 8), ("nmf_8", 8), ("lda_30", 30), ("nmf_30", 30)]:
+                if _stacking_bundle[nome_modelo].n_components != n_topicos:
+                    raise RuntimeError(f"Dimensão errada: {nome_modelo} não possui {n_topicos} tópicos.")
+                    
+            vocab_size = len(_stacking_bundle["tfidf_lemmas"].vocabulary_)
+            if hasattr(_stacking_bundle["lda_8"], "n_features_in_") and _stacking_bundle["lda_8"].n_features_in_ != vocab_size:
+                raise RuntimeError("Incompatibilidade: tfidf_lemmas não alinhado com os modelos de tópicos.")
                 
             # Validação do Manifesto
             manifest_path = os.path.join(base_dir, "models", "model_manifest.json")
