@@ -41,6 +41,13 @@ jobs:
         pip install -r requirements.txt
         pip install pytest pytest-asyncio httpx
 
+    - name: Validações de Estrutura (Alembic)
+      env:
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
+      run: |
+        cd backend
+        alembic upgrade head
+
     - name: Run Pytest
       env:
         DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
@@ -52,10 +59,3 @@ jobs:
       run: |
         cd backend
         python -c "import logging; logging.basicConfig(level=logging.INFO); from api.inferencia import carregar_bundle_stacking; carregar_bundle_stacking(); print('Modelo validado como conjunto único!')"
-
-    - name: Validações de Estrutura (Alembic)
-      env:
-        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname"
-      run: |
-        cd backend
-        alembic upgrade head
