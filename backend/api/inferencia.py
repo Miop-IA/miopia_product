@@ -35,48 +35,11 @@ def carregar_bundle_stacking():
             return _stacking_bundle
         except Exception as e:
             logger.error(f"Erro ao deserializar o bundle do Stacking: {e}")
+            raise RuntimeError(f"Erro ao carregar o modelo Stacking: {e}")
 
-    logger.warning("Artefato 'stacking_miopia_v1.joblib' não encontrado. Inicializando fallback local em memória.")
-    _stacking_bundle = _criar_baseline_stacking()
-    return _stacking_bundle
-
-
-def _criar_baseline_stacking():
-    """Fallback inicial em memória para permitir inicialização da API sem o artefato físico."""
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.linear_model import LogisticRegression, SGDClassifier
-    from xgboost import XGBClassifier
-
-    docs_dummy = [
-        "noticia oficial confirmada pelo orgao publico com transparencia e fatos apurados",
-        "bomba urgente veja o plano secreto divulgado repasse imediatamente antes que apaguem",
-    ]
-    y_dummy = np.array([0, 1])
-
-    vec_char = TfidfVectorizer(analyzer="char", ngram_range=(3, 5)).fit(docs_dummy)
-    svm_char = SGDClassifier(loss="log_loss", random_state=42).fit(vec_char.transform(docs_dummy), y_dummy)
-
-    vec_word = TfidfVectorizer(ngram_range=(1, 2)).fit(docs_dummy)
-    svm_word = SGDClassifier(loss="log_loss", random_state=42).fit(vec_word.transform(docs_dummy), y_dummy)
-
-    X_denso_dummy = np.random.uniform(0.0, 0.5, size=(2, 15 + 40))
-    xgb_denso = XGBClassifier(n_estimators=5, max_depth=2, eval_metric="logloss").fit(X_denso_dummy, y_dummy)
-
-    meta = LogisticRegression()
-    meta.coef_ = np.array([[1.0, 0.13, 0.45]])
-    meta.intercept_ = np.array([-0.65])
-    meta.classes_ = np.array([0, 1])
-
-    return {
-        "tfidf_char": vec_char,
-        "svm_caracteres": svm_char,
-        "tfidf_word": vec_word,
-        "svm_palavras": svm_word,
-        "xgb_denso": xgb_denso,
-        "meta_modelo": meta,
-        "f1_score": 0.961,
-        "limiar": 0.46,
-    }
+    error_msg = f"Artefato '{model_path}' não encontrado. O sistema não pode inicializar sem o modelo de inferência."
+    logger.error(error_msg)
+    raise FileNotFoundError(error_msg)
 
 
 def extrair_features_topicos(texto_lematizado: str, bundle: Dict[str, Any]) -> np.ndarray:

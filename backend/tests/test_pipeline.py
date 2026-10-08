@@ -149,8 +149,8 @@ def test_feature_order():
     assert len(features) == len(ESTILO_FEATURE_NAMES)
 
 
-def test_modelo_ausente_fallback(monkeypatch):
-    """Garante que o backend crie um baseline local em memória caso o .joblib falhe ou não exista."""
+def test_modelo_ausente_excecao(monkeypatch):
+    """Garante que o backend levante erro caso o .joblib falhe ou não exista."""
     import os
     from api.inferencia import _stacking_bundle, carregar_bundle_stacking
     import api.inferencia
@@ -159,12 +159,8 @@ def test_modelo_ausente_fallback(monkeypatch):
     api.inferencia._stacking_bundle = None
     monkeypatch.setattr(os.path, "exists", lambda path: False)
     
-    bundle = carregar_bundle_stacking()
-    assert bundle is not None
-    assert "tfidf_char" in bundle
-    assert "xgb_denso" in bundle
-    assert bundle["f1_score"] == 0.961
-    assert bundle["limiar"] == 0.46
+    with pytest.raises(FileNotFoundError):
+        carregar_bundle_stacking()
 
 
 def test_dimensoes_incompativeis(monkeypatch):

@@ -214,7 +214,15 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
 
     # 2. Processamento de texto inédito
     features, textos = extrair_pacote_analise(texto_puro, num_links_param=payload.num_links)
-    prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
+    
+    try:
+        prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
+    except (FileNotFoundError, RuntimeError) as e:
+        logger.error(f"Erro na inferência: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Serviço de inferência indisponível. O modelo não está carregado."
+        )
 
     texto_trunc = textos.get("texto_cru", texto_puro)
 
