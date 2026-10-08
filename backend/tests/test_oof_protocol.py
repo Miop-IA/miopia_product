@@ -47,19 +47,25 @@ def test_metamodelo_usa_oof(tmp_path):
     matrizes OOF populadas (dimensão e integridade), e não as matrizes originais.
     """
     N = 30
+    target = [i % 2 for i in range(N)]
+    # Textos separáveis por classe: o treino exige F1 mínimo antes de empacotar o bundle.
+    textos = {
+        0: ("Ministério divulga relatório oficial.", "ministerio divulga relatorio oficial", "ministerio divulgar relatorio oficial"),
+        1: ("URGENTE compartilhe antes que apaguem!", "urgente compartilhe antes apaguem", "urgente compartilhar antes apagar"),
+    }
     df_dummy = pd.DataFrame({
         "id_noticia": list(range(1, N+1)),
-        "target": [i % 2 for i in range(N)],
-        "texto_cru": ["Texto dummy cruel para teste."] * N,
-        "texto_limpo": ["texto dummy limpo"] * N,
-        "texto_lematizado": ["texto dummy lema"] * N,
+        "target": target,
+        "texto_cru": [textos[t][0] for t in target],
+        "texto_limpo": [textos[t][1] for t in target],
+        "texto_lematizado": [textos[t][2] for t in target],
     })
 
     df_val = df_dummy.copy()
     df_val["id_noticia"] = list(range(101, 101+N))
     for f in ESTILO_FEATURE_NAMES:
-        df_dummy[f] = np.random.rand(N)
-        df_val[f] = np.random.rand(N)
+        df_dummy[f] = np.random.rand(N) + df_dummy["target"]
+        df_val[f] = np.random.rand(N) + df_val["target"]
     
     from sklearn.linear_model import LogisticRegression
     real_fit = LogisticRegression.fit

@@ -168,17 +168,12 @@ def test_feature_order():
     assert len(features) == len(ESTILO_FEATURE_NAMES)
 
 
-def test_modelo_ausente_excecao(monkeypatch):
-    """Garante que o backend levante erro caso o .joblib falhe ou não exista."""
-    import os
-    from api.inferencia import _stacking_bundle, carregar_bundle_stacking
-    import api.inferencia
-    
-    # Zera cache e simula arquivo inexistente
-    api.inferencia._stacking_bundle = None
-    monkeypatch.setattr(os.path, "exists", lambda path: False)
-    
-    with pytest.raises(FileNotFoundError):
+def test_modelo_ausente_excecao(apontar_modelo, tmp_path):
+    """Garante que o backend levante erro caso o .joblib não exista."""
+    from api.bundle_spec import ModeloAusenteError
+
+    apontar_modelo(tmp_path / "nao_existe.joblib")
+    with pytest.raises(ModeloAusenteError):
         carregar_bundle_stacking()
 
 
@@ -193,7 +188,7 @@ def test_dimensoes_incompativeis(monkeypatch):
     # Injeta um dicionário de features incompleto intencionalmente
     features_incompletas = {k: v for i, (k, v) in enumerate(features.items()) if i < 10}
     
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError, match="features estilométricas ausentes"):
         # A montagem do vetor no predizer_risco_stacking exige todas as chaves
         predizer_risco_stacking(features_incompletas, textos)
 

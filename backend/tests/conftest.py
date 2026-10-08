@@ -36,3 +36,22 @@ os.environ["MODEL_PATH"] = BUNDLE_TESTE_PATH
 from api.config import get_settings  # noqa: E402
 
 get_settings.cache_clear()
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def apontar_modelo(monkeypatch):
+    """Aponta a API para outro caminho de modelo e restaura o bundle de teste ao final."""
+    from api.inferencia import resetar_cache_bundle
+
+    def _apontar(caminho):
+        monkeypatch.setenv("MODEL_PATH", str(caminho))
+        get_settings.cache_clear()
+        resetar_cache_bundle()
+
+    yield _apontar
+    monkeypatch.setenv("MODEL_PATH", BUNDLE_TESTE_PATH)
+    get_settings.cache_clear()
+    resetar_cache_bundle()

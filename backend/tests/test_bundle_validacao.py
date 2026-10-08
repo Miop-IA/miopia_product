@@ -40,22 +40,6 @@ def salvar(tmp_path):
     return _salvar
 
 
-@pytest.fixture
-def apontar_modelo(monkeypatch):
-    """Aponta a API para outro caminho de modelo e restaura o bundle de teste ao final."""
-    from api.config import get_settings
-
-    def _apontar(caminho):
-        monkeypatch.setenv("MODEL_PATH", caminho)
-        get_settings.cache_clear()
-        resetar_cache_bundle()
-
-    yield _apontar
-    monkeypatch.setenv("MODEL_PATH", BUNDLE_TESTE_PATH)
-    get_settings.cache_clear()
-    resetar_cache_bundle()
-
-
 def _sem_erro_de_validacao(bundle):
     validar_bundle(bundle)
 
