@@ -71,6 +71,7 @@ CHAVES_OBRIGATORIAS = (
     "nmf_8",
     "lda_30",
     "nmf_30",
+    "scaler_estilo",
     "xgb_denso",
     "meta_modelo",
     "limiar",
@@ -188,6 +189,13 @@ def validar_bundle(bundle: Any) -> None:
         n_in = getattr(modelo, "n_features_in_", None)
         if n_lemas is not None and n_in != n_lemas:
             problemas.append(f"{chave} espera {n_in} features, mas tfidf_lemmas produz {n_lemas}")
+
+    # --- Normalizador das features estilométricas -------------------------
+    n_scaler = getattr(bundle["scaler_estilo"], "n_features_in_", None)
+    if n_scaler != len(ESTILO_FEATURE_NAMES):
+        problemas.append(
+            f"scaler_estilo espera {n_scaler} features, esperado {len(ESTILO_FEATURE_NAMES)}"
+        )
 
     # --- XGBoost denso -----------------------------------------------------
     n_xgb = getattr(bundle["xgb_denso"], "n_features_in_", None)

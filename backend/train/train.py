@@ -59,7 +59,8 @@ def extrair_vetor_k_mais_3(model, X_text_transformed: np.ndarray) -> np.ndarray:
 def treinar_stacking(
     df_treino: pd.DataFrame,
     df_val: pd.DataFrame,
-    output_path: str = None
+    output_path: str = None,
+    version: str = None,
 ) -> Dict:
     """
     Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística
@@ -194,7 +195,9 @@ def treinar_stacking(
     # 4. Ramo XGBoost Denso: Estilo (15 features) + Temas (k=8 e k=30)
     # -------------------------------------------------------------
     logger.info("A treinar XGBoost Denso (Estilo + Temas)...")
-    X_estilo = df_treino[ESTILO_FEATURE_NAMES].values
+    # O mesmo normalizador é aplicado na avaliação e na inferência da API.
+    scaler_estilo = StandardScaler()
+    X_estilo = scaler_estilo.fit_transform(df_treino[ESTILO_FEATURE_NAMES].values)
     X_denso_train = np.hstack([X_estilo, v_lda8, v_nmf8, v_lda30, v_nmf30])
     if X_denso_train.shape[1] != FEATURE_COUNT:
         raise ValueError(f"Vetor denso com {X_denso_train.shape[1]} features, contrato exige {FEATURE_COUNT}")
@@ -318,7 +321,10 @@ def treinar_stacking(
         "n_grupos_treino": df_treino['id_noticia'].nunique() if 'id_noticia' in df_treino.columns else 0,
         "n_grupos_teste": df_eval['id_noticia'].nunique() if 'id_noticia' in df_eval.columns else 0,
         "dataset_version": "fake_br_master + dataset_11",
-        "feature_names_estilo": ESTILO_FEATURE_NAMES,
+        "feature_names_estilo": list(ESTILO_FEATURE_NAMES),
+        "feature_order": list(FEATURE_ORDER),
+        "feature_count": FEATURE_COUNT,
+        "version": version or datetime.now(timezone.utc).strftime("stacking-%Y%m%dT%H%M%SZ"),
     }
 
     # O mesmo contrato verificado no startup da API: nunca serializar bundle inválido.
@@ -332,11 +338,11 @@ def treinar_stacking(
         # Gerar o manifest JSON
         manifest_path = os.path.join(os.path.dirname(output_path), "model_manifest.json")
         try:
-            import json, datetime, subprocess, sklearn, xgboost, spacy, sys
+            import json, subprocess, sklearn, xgboost, spacy
             commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
             
             manifest = {
-                "model_version": "v1",
+                "model_version": bundle["version"],
                 "pipeline_version": "1.0",
                 "dataset_version": bundle["dataset_version"],
                 "training_commit": commit_hash,
@@ -356,7 +362,7 @@ def treinar_stacking(
                 "n_grupos_treino": bundle["n_grupos_treino"],
                 "n_grupos_teste": bundle["n_grupos_teste"],
                 "feature_count": int(bundle["xgb_denso"].n_features_in_),
-                "training_date": datetime.datetime.now().isoformat()
+                "training_date": datetime.now().isoformat()
             }
             with open(manifest_path, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=4)
@@ -420,38 +426,39 @@ def carregar_dados_reais(caminho_dataset_11: str, caminho_master: str) -> pd.Dat
 
 
 if __name__ == "__main__":
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    target_joblib = os.path.join(base_dir, "models", "stacking_miopia_v1.joblib")
+    import argparse
 
-    caminho_11 = os.path.join(base_dir, "api", "data", "dataset_11.csv")
-    caminho_master = os.path.join(base_dir, "api", "data", "fake_br_master.csv")
+    parser = argparse.ArgumentParser(description="Treina o bundle Stacking Miop.IA.")
+    parser.add_argument("--dados-dir", default=os.path.join(_BACKEND_DIR, "api", "data"),
+                        help="Pasta com dataset_11.csv e fake_br_master.csv")
+    parser.add_argument("--saida", default=os.path.join(_BACKEND_DIR, "models", "stacking_miopia_v1.joblib"),
+                        help="Caminho do bundle gerado (o manifesto é gravado na mesma pasta)")
+    parser.add_argument("--versao", default=None, help="Identificador de versão gravado no bundle e no manifesto")
+    args = parser.parse_args()
 
-    if os.path.exists(caminho_11) and os.path.exists(caminho_master):
-        logger.info(f"A carregar bases reais: {caminho_11} e {caminho_master}")
-        df_completo = carregar_dados_reais(caminho_11, caminho_master)
-        
-        # Divisão com GroupShuffleSplit para que pares da mesma id_noticia não se separem
-        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-        train_idx, test_idx = next(gss.split(df_completo, groups=df_completo["id_noticia"]))
-        
-        df_treino = df_completo.iloc[train_idx]
-        df_teste = df_completo.iloc[test_idx]
-        
-        logger.info(f"n_treino: {len(df_treino)}")
-        logger.info(f"n_teste: {len(df_teste)}")
-        logger.info(f"Grupos no Treino: {df_treino['id_noticia'].nunique()} | Tamanho: {len(df_treino)}")
-        logger.info(f"Grupos no Teste Reservado: {df_teste['id_noticia'].nunique()} | Tamanho: {len(df_teste)}")
-        logger.info(f"distribuição de classes (Treino): {df_treino['target'].value_counts().to_dict()}")
-        logger.info(f"distribuição de classes (Teste): {df_teste['target'].value_counts().to_dict()}")
-        
-        treinar_stacking(df_treino=df_treino, df_val=df_teste, output_path=target_joblib)
-    else:
-        caminho_11 = os.path.join(args.dados_dir, "dataset_11.csv")
-        caminho_master = os.path.join(args.dados_dir, "fake_br_master.csv")
-        faltando = [c for c in (caminho_11, caminho_master) if not os.path.exists(c)]
-        if faltando:
-            sys.exit(f"Bases reais não encontradas: {faltando}. Nenhum modelo foi gerado.")
-        df_completo = carregar_dados_reais(caminho_11, caminho_master)
-        treinar_stacking(df_completo, output_path=args.saida, version=args.versao)
+    caminho_11 = os.path.join(args.dados_dir, "dataset_11.csv")
+    caminho_master = os.path.join(args.dados_dir, "fake_br_master.csv")
+    faltando = [c for c in (caminho_11, caminho_master) if not os.path.exists(c)]
+    if faltando:
+        sys.exit(f"Bases reais não encontradas: {faltando}. Nenhum modelo foi gerado.")
+
+    logger.info(f"A carregar bases reais: {caminho_11} e {caminho_master}")
+    df_completo = carregar_dados_reais(caminho_11, caminho_master)
+
+    # Divisão com GroupShuffleSplit para que pares da mesma id_noticia não se separem
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    train_idx, test_idx = next(gss.split(df_completo, groups=df_completo["id_noticia"]))
+
+    df_treino = df_completo.iloc[train_idx]
+    df_teste = df_completo.iloc[test_idx]
+
+    logger.info(f"n_treino: {len(df_treino)}")
+    logger.info(f"n_teste: {len(df_teste)}")
+    logger.info(f"Grupos no Treino: {df_treino['id_noticia'].nunique()} | Tamanho: {len(df_treino)}")
+    logger.info(f"Grupos no Teste Reservado: {df_teste['id_noticia'].nunique()} | Tamanho: {len(df_teste)}")
+    logger.info(f"distribuição de classes (Treino): {df_treino['target'].value_counts().to_dict()}")
+    logger.info(f"distribuição de classes (Teste): {df_teste['target'].value_counts().to_dict()}")
+
+    treinar_stacking(df_treino=df_treino, df_val=df_teste, output_path=args.saida, version=args.versao)
 
     logger.info("Pipeline concluído.")
