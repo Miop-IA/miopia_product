@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="modal" id="modal">
+
+    <!-- ===== CABEÇALHO ===== -->
+    <div class="cabecalho">
+      <div class="logo"><img src="src/assets/logo.svg" alt="Miop.IA"></div>
+      <div class="badge-site" id="badgeSite">g1.globo.com</div>
+    </div>
+
+    <!-- ===== ESTADO DE CARREGAMENTO ===== -->
+    <div id="loadingState" class="state-loading">
+      <div class="spinner"></div>
+      <p>Analisando a notícia...</p>
+    </div>
+
+    <!-- ===== ESTADO DE ERRO ===== -->
+    <div id="errorState" class="state-error" hidden>
+      <p style="font-size:32px; margin:0 0 8px 0;">⚠️</p>
+      <p id="errorMessage" style="color:var(--cor-falsa); text-align:center; margin:0 0 12px 0; font-size:14px;">Erro ao analisar a notícia.</p>
+      <button id="retryBtn" class="botao-enviar" style="margin:0 auto;">Tentar novamente</button>
+    </div>
+
+    <!-- ===== ESTADO 1 — ANÁLISE ===== -->
+    <div class="conteudo-analise" id="conteudoAnalise" hidden>
+
+      <!-- Bloco ENTENDA -->
+      <div class="bloco-entenda" id="blocoEntenda">
+        <label class="rotulo">Entenda</label>
+        <h2 id="tituloNoticia">Estudo aponta relação entre uso de telas e qualidade do sono em adolescentes</h2>
+        <p class="corpo" id="corpoNoticia">
+          Carregando análise...
+        </p>
+
+        <hr class="divisor">
+
+        <label class="rotulo">O que cada destaque revela</label>
+        <div class="reveal-layout">
+          <div class="destaques-grid" id="destaquesGrid">
+            <!-- Preenchido dinamicamente -->
+          </div>
+          <div class="pense">
+            <label class="rotulo">Pense</label>
+            <ul>
+              <li>Quem publicou isso e o que essa fonte ganha com a sua atenção?</li>
+              <li>A manchete promete mais do que o texto entrega?</li>
+              <li>Onde estão os números — e quem os produziu?</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bloco ANTES DE COMPARTILHAR -->
+      <div class="bloco-antes">
+        <label class="rotulo">Antes de compartilhar</label>
+        <p>
+          Notícias enganosas raramente inventam fatos. Elas omitem a fonte do número,
+          generalizam uma amostra pequena e transformam coincidência em causa.
+          Compartilhar sem checar espalha o erro mais rápido do que a correção consegue
+          alcançar.
+        </p>
+      </div>
+
+      <!-- Bloco SUA AVALIAÇÃO -->
+      <div class="bloco-avaliacao">
+        <label class="rotulo">Sua avaliação</label>
+        <p class="pergunta-avaliacao">O que você acha dessa notícia?</p>
+        <div class="botoes-avaliacao" id="botoesAvaliacao">
+          <button class="botao-rating" data-valor="verdadeira">Verdadeira</button>
+          <button class="botao-rating" data-valor="duvidosa">Duvidosa</button>
+          <button class="botao-rating" data-valor="falsa">Falsa</button>
+        </div>
+        <button class="botao-enviar" id="botaoEnviar" hidden>Enviar</button>
+      </div>
+    </div>
+
+    <!-- ===== ESTADO 2 — PÓS-ENVIO ===== -->
+    <div class="tela-pos-envio" id="telaPosEnvio" hidden>
+      <label class="rotulo">Sua avaliação</label>
+      <p class="pergunta-avaliacao">O que você acha dessa notícia?</p>
+      <div class="botoes-avaliacao" id="botoesAvaliacaoFinal"></div>
+
+      <div class="bloco-obrigada">
+        <label class="rotulo">Obrigada por avaliar!</label>
+        <p>
+          Cada análise sua contribui para um consumo de notícias mais atento, ajuda a
+          frear a desinformação e fortalece o hábito de checar antes de compartilhar.
+        </p>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

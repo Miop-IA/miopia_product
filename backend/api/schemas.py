@@ -37,6 +37,7 @@ class AnaliseRequest(BaseModel):
     texto: str = Field(default="", description="Texto da notícia para análise")
     text: Optional[str] = Field(None, description="Alias em inglês para compatibilidade")
     url: Optional[str] = Field(None, description="URL de origem opcional")
+    num_links: Optional[int] = Field(None, description="Contagem de links HTML reais calculada na origem (DOM)")
 
     @model_validator(mode="before")
     @classmethod

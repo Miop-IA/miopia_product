@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import spacy
 from spellchecker import SpellChecker
 
@@ -72,13 +72,27 @@ def calcular_mattr(lemas: List[str], window_size: int = 25) -> float:
 
     return float(sum(ttrs) / len(ttrs))
 
+def calcular_rc_spelling_errors(spell_candidates: List[str], num_words: int) -> float:
+    """
+    Calcula matematicamente a proporção de ocorrências de erros ortográficos 
+    pelo total de palavras válidas, garantindo que não há mistura entre tipos e ocorrências.
+    """
+    if not spell_candidates or num_words <= 0:
+        return 0.0
+    erros_unicos = spell.unknown(list(set(spell_candidates)))
+    qtd_erros = sum(1 for word in spell_candidates if word in erros_unicos)
+    return float(qtd_erros / num_words)
 
-def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dict[str, float], Dict[str, str]]:
+
+def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500, num_links_param: Optional[int] = None) -> Tuple[str, str, int]:
     """
-    Processa o texto sob o limite de truncamento e retorna:
-    1. Dicionário das 15 features estilométricas (com MATTR em trunc_diversity).
-    2. Dicionário com as 3 representações de texto: texto_cru, texto_limpo, texto_lematizado.
+    Função unificada de preprocessing e truncamento para treino e inferência.
+    Garante que o texto seja limpo e truncado da mesma forma nos dois pipelines.
+    Retorna (texto_cru_trunc, texto_limpo, num_links).
     """
+    if not isinstance(texto_bruto, str) or pd.isna(texto_bruto) if 'pd' in globals() else not texto_bruto:
+        return "", "", 0
+
     texto_sanitizado = sanitizar_texto_noticia(texto_bruto)
 
     palavras_cruas = texto_sanitizado.split()
@@ -87,11 +101,27 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dic
     else:
         texto_cru_trunc = texto_sanitizado
 
-    links = re.findall(r"(?:https?://|www\.)[^\s]+", texto_cru_trunc)
-    num_links = len(links)
+    if num_links_param is not None:
+        num_links = num_links_param
+    else:
+        links = re.findall(r"(?:https?://|www\.)[^\s]+", texto_cru_trunc)
+        num_links = len(links)
 
     texto_limpo = re.sub(r"(?:https?://|www\.)[^\s]+", "", texto_cru_trunc)
-    texto_limpo = re.sub(r"[\s\xa0\u200b]+", " ", texto_limpo).strip()
+    # Importante: texto_limpo é convertido para lower case para paridade total com o TF-IDF
+    texto_limpo = re.sub(r"[\s\xa0\u200b]+", " ", texto_limpo).strip().lower()
+
+    return texto_cru_trunc, texto_limpo, num_links
+
+
+def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500, num_links_param: Optional[int] = None) -> Tuple[Dict[str, float], Dict[str, str]]:
+    """
+    Processa o texto sob o limite de truncamento e retorna:
+    1. Dicionário das 15 features estilométricas (com MATTR em trunc_diversity).
+    2. Dicionário com as 3 representações de texto: texto_cru, texto_limpo, texto_lematizado.
+    """
+    import pandas as pd
+    texto_cru_trunc, texto_limpo, num_links = preparar_texto_comum(texto_bruto, max_tokens, num_links_param)
 
     doc = nlp(texto_limpo)
     sents = list(doc.sents)
@@ -134,29 +164,33 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dic
             pos_counts["ADJ"] += 1
         elif pos == "ADV":
             pos_counts["ADV"] += 1
-        elif pos == "PRON":
+        elif pos in ("PRON", "DET"):
             pos_counts["PRON"] += 1
 
-        if t.lemma_ in MODAL_LEMMAS:
+        is_verb = pos in ("VERB", "AUX")
+        
+        if is_verb and t.lemma_ in MODAL_LEMMAS:
             modal_verbs_count += 1
-        elif t.lemma_ == "ter" and i < doc_length - 1:
+        elif is_verb and t.lemma_ == "ter" and i < doc_length - 1:
             if doc[i + 1].lower_ in ("que", "de"):
                 modal_verbs_count += 1
 
         moods = t.morph.get("Mood")
-        if moods and ("Sub" in moods or "Imp" in moods):
+        if is_verb and moods and ("Sub" in moods or "Imp" in moods):
             subj_imp_count += 1
 
         person = t.morph.get("Person")
         number = t.morph.get("Number")
+        is_pron_det = pos in ("PRON", "DET")
+        
         is_1_2_sing = (
-            pos == "PRON" and person and ("1" in person or "2" in person) and number and "Sing" in number
+            is_pron_det and person and ("1" in person or "2" in person) and number and "Sing" in number
         ) or (t_lower in PRON_1_2_SING)
         if is_1_2_sing:
             pron_1_2_sing_count += 1
 
         is_1_plur = (
-            pos == "PRON" and person and "1" in person and number and "Plur" in number
+            is_pron_det and person and "1" in person and number and "Plur" in number
         ) or (t_lower in PRON_1_PLUR)
         if is_1_plur:
             pron_1_plur_count += 1
@@ -164,11 +198,7 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dic
         if t.is_lower and len(t.text) > 2 and pos != "PROPN":
             spell_candidates.append(t.text)
 
-    rc_spelling_errors = 0.0
-    if spell_candidates:
-        erros_unicos = spell.unknown(list(set(spell_candidates)))
-        qtd_erros = sum(1 for word in spell_candidates if word in erros_unicos)
-        rc_spelling_errors = qtd_erros / len(spell_candidates)
+    rc_spelling_errors = calcular_rc_spelling_errors(spell_candidates, num_words)
 
     emotiveness_den = pos_counts["NOUN"] + pos_counts["VERB"]
     trunc_emotiveness = (pos_counts["ADJ"] + pos_counts["ADV"]) / emotiveness_den if emotiveness_den > 0 else 0.0
@@ -186,8 +216,8 @@ def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dic
         "trunc_pron_density": round(float(pos_counts["PRON"] / num_words), 4),
         "link_density": round(float(num_links / num_words), 4),
         "rc_spelling_errors": round(float(rc_spelling_errors), 4),
-        "rc_modal_verbs_density": round(float(modal_verbs_count / total_verbos), 4),
-        "rc_subj_imp_verbs_density": round(float(subj_imp_count / total_verbos), 4),
+        "rc_modal_verbs_density": round(float(modal_verbs_count / num_words), 4),
+        "rc_subj_imp_verbs_density": round(float(subj_imp_count / num_words), 4),
         "rc_pron_1_2_sing_density": round(float(pron_1_2_sing_count / num_words), 4),
         "rc_pron_1_plur_density": round(float(pron_1_plur_count / num_words), 4),
     }
