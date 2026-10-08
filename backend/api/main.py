@@ -71,11 +71,8 @@ def get_or_create_modelo(db: Session, model_info: dict) -> Modelo:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Tabelas inicializadas com sucesso.")
-    except Exception as e:
-        logger.warning(f"Aviso de banco: {e}")
+    # As tabelas agora são gerenciadas pelo Alembic. 
+    # Use 'alembic upgrade head' para inicializar o banco.
     yield
 
 
