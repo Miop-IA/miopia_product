@@ -126,14 +126,49 @@ def obter_bundle_ou_503():
 
 @app.get("/health", tags=["Monitoramento"])
 def health_check():
-    meta = resumo_bundle(obter_bundle_ou_503())
-    return {
-        "status": "online",
-        "environment": settings.environment,
-        "model": f"Stacking {meta['version']} (F1={meta['f1_score']})",
-        "model_version": meta["version"],
-        "feature_count": meta["feature_count"],
-    }
+    """Retorna sucesso caso a API esteja operando."""
+    return {"status": "online", "environment": settings.environment, "model": "Stacking Parte C (F1=0.961)"}
+
+
+@app.get("/ready", tags=["Monitoramento"])
+def readiness_check(db: Session = Depends(get_db)):
+    """
+    Retorna 200 OK se e somente se:
+    1. O modelo está carregado em memória.
+    2. O bundle do modelo possui as chaves obrigatórias.
+    3. O banco de dados está acessível.
+    """
+    reasons = []
+
+    # 1 e 2. Validação do Bundle e Modelo Carregado
+    try:
+        from api.inferencia import carregar_bundle_stacking
+        bundle = carregar_bundle_stacking()
+        
+        required_keys = [
+            "tfidf_char", "svm_caracteres", "tfidf_word", "svm_palavras",
+            "xgb_denso", "meta_modelo", "f1_score", "limiar"
+        ]
+        missing = [k for k in required_keys if k not in bundle]
+        if missing:
+            reasons.append(f"Bundle incompleto. Chaves ausentes: {missing}")
+    except Exception as e:
+        reasons.append(f"Erro ao carregar modelo: {str(e)}")
+
+    # 3. Validação do Banco de Dados
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        reasons.append(f"Banco de dados inacessível: {str(e)}")
+
+    if reasons:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"status": "not ready", "reasons": reasons}
+        )
+
+    return {"status": "ready"}
 
 
 @app.post("/analisar", response_model=AnaliseResponse, status_code=status.HTTP_200_OK, tags=["Análise"])
