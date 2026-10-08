@@ -29,8 +29,7 @@ class Noticia(Base):
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True, autoincrement=True)
     hash_texto = Column(String(64), index=True, nullable=False)
     url = Column(String(500), nullable=True)
-    texto = Column(Text, nullable=False)
-    texto_truncado = Column(Text, nullable=True)
+    texto_truncado = Column(Text, nullable=False)
     modelo_id = Column(BigInteger, ForeignKey("modelos.id"), nullable=False)
     
     # Métricas preditivas

@@ -210,8 +210,8 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
             metricas=metricas_dto,
             avaliacoes_comunidade=avaliacoes,
             features=metricas_dto.model_dump(),
-            texto_truncado=noticia_existente.texto_truncado or noticia_existente.texto,
-            total_palavras_truncado=len((noticia_existente.texto_truncado or noticia_existente.texto).split()) if (noticia_existente.texto_truncado or noticia_existente.texto) else 0,
+            texto_truncado=noticia_existente.texto_truncado,
+            total_palavras_truncado=len(noticia_existente.texto_truncado.split()) if noticia_existente.texto_truncado else 0,
         )
 
     # 2. Processamento de texto inédito
@@ -231,7 +231,6 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
     nova_noticia = Noticia(
         url=payload.url,
         hash_texto=hash_txt,
-        texto=normalizar_texto(texto_puro),
         texto_truncado=texto_trunc,
         prob_suspeita=prob_suspeita,
         faixa=faixa,
