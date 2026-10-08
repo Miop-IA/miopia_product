@@ -254,11 +254,11 @@
   /* =============================================================
      API
      ============================================================= */
-  function analisar(texto, url) {
+  function analisar(texto, url, numLinks) {
     return fetch("http://localhost:8000/analisar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto: texto, url: url || "" })
+      body: JSON.stringify({ texto: texto, url: url || "", num_links: numLinks })
     }).then(function(r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
@@ -324,7 +324,7 @@
         return;
       }
       if (!resposta.text) { mostraErro("Não foi possível extrair texto da página."); return; }
-      enviaParaAPI(resposta.text, tab.url, resposta.title);
+      enviaParaAPI(resposta.text, tab.url, resposta.title, resposta.links);
     });
   }
 
@@ -353,13 +353,19 @@
           if (t.length > 20) textos.push(t);
         });
 
+        var links = Array.from(clone.querySelectorAll("a[href]")).filter(function(a) {
+           var href = a.getAttribute("href") || "";
+           return href.length > 0 && !href.startsWith("#") && !href.startsWith("javascript:");
+        }).length;
+
         var texto = textos.join("\n\n") || (clone.innerText || clone.textContent || "").trim();
         return {
           success: true,
           title: (document.querySelector("h1") ? document.querySelector("h1").innerText.trim() : document.title) || "",
           text: texto,
           words: texto.split(/\s+/).filter(Boolean).length,
-          paragraphs: textos.length
+          paragraphs: textos.length,
+          links: links
         };
       }
     }, function(results) {
@@ -369,12 +375,12 @@
       }
       var d = results[0].result;
       if (!d.text) { mostraErro("Não foi possível extrair texto da página."); return; }
-      enviaParaAPI(d.text, tab.url, d.title);
+      enviaParaAPI(d.text, tab.url, d.title, d.links);
     });
   }
 
-  function enviaParaAPI(texto, url, tituloExtraido) {
-    analisar(texto, url).then(function(dados) {
+  function enviaParaAPI(texto, url, tituloExtraido, links) {
+    analisar(texto, url, links).then(function(dados) {
       esconde(loadingState);
       esconde(errorState);
       mostra(conteudoAnalise);

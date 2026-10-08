@@ -123,7 +123,7 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         )
 
     # 2. Processamento de texto inédito
-    features, textos = extrair_pacote_analise(texto_puro)
+    features, textos = extrair_pacote_analise(texto_puro, num_links_param=payload.num_links)
     prob_suspeita, faixa, orientacao, f1_score = predizer_risco_stacking(features, textos)
 
     nova_noticia = Noticia(

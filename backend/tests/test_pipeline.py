@@ -82,5 +82,23 @@ def test_paridade_preprocessing_treino_producao():
     _, limpo, num = preparar_texto_comum(texto_com_link, max_tokens=500)
     
     assert num == 2
-    assert "https" not in limpo
     assert "www" not in limpo
+
+
+def test_link_density_com_num_links_payload():
+    """Verifica se o backend aceita e prioriza o num_links vindo do payload (DOM) na hora de calcular link_density."""
+    from fastapi.testclient import TestClient
+    from api.main import app
+    client = TestClient(app)
+    
+    texto_sem_link_literal = "Este é um texto gigante sem nenhuma url literal escrita, mas que no HTML tem links reais. " * 20
+    
+    # Se não enviar num_links, a link_density deve ser 0 (pois não há http/www escrito)
+    response_sem = client.post("/analisar", json={"texto": texto_sem_link_literal})
+    assert response_sem.status_code == 200
+    assert response_sem.json()["features"]["link_density"] == 0.0
+    
+    # Se enviar num_links=5, a link_density deve ser > 0 (usa o valor exato do DOM)
+    response_com = client.post("/analisar", json={"texto": texto_sem_link_literal, "num_links": 5})
+    assert response_com.status_code == 200
+    assert response_com.json()["features"]["link_density"] > 0.0

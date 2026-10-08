@@ -158,6 +158,7 @@ function extractNewsContent() {
           text: rescueResult.text,
           words: rescueResult.words,
           paragraphs: rescueResult.paragraphs,
+          links: rescueResult.links,
           method: "readability_rescue"
         };
       }
@@ -169,6 +170,7 @@ function extractNewsContent() {
     text: result.text,
     words: result.words,
     paragraphs: result.paragraphs,
+    links: result.links,
     method: extractionMethod
   };
 }
@@ -338,6 +340,7 @@ function formatQuotesAndCitations(container) {
 function extractCleanParagraphs(clone) {
   const pElements = Array.from(clone.querySelectorAll('p'));
   const validParagraphs = [];
+  let linksCount = 0;
 
   for (const p of pElements) {
     const raw = (p.innerText || p.textContent || '').trim();
@@ -346,12 +349,26 @@ function extractCleanParagraphs(clone) {
     if (BOILERPLATE_REGEX.some((rx) => rx.test(raw))) continue;
 
     validParagraphs.push(raw);
+    
+    // Contar links reais no HTML deste parágrafo (ignorando âncoras/javascript)
+    const pLinks = p.querySelectorAll('a[href]');
+    let validLinks = Array.from(pLinks).filter(a => {
+       const href = a.getAttribute('href') || '';
+       return href.length > 0 && !href.startsWith('#') && !href.startsWith('javascript:');
+    });
+    linksCount += validLinks.length;
   }
 
   let text = '';
   if (validParagraphs.length >= 2) {
     text = validParagraphs.join('\n\n');
   } else {
+    const cloneLinks = clone.querySelectorAll('a[href]');
+    linksCount = Array.from(cloneLinks).filter(a => {
+       const href = a.getAttribute('href') || '';
+       return href.length > 0 && !href.startsWith('#') && !href.startsWith('javascript:');
+    }).length;
+
     const rawLines = (clone.innerText || clone.textContent || '')
       .split('\n')
       .map((l) => l.trim())
@@ -364,7 +381,8 @@ function extractCleanParagraphs(clone) {
   return {
     text,
     words,
-    paragraphs: validParagraphs.length || (text ? text.split('\n\n').length : 0)
+    paragraphs: validParagraphs.length || (text ? text.split('\n\n').length : 0),
+    links: linksCount
   };
 }
 
