@@ -1,5 +1,5 @@
 from typing import Generator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, make_url
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from api.config import get_settings
 
@@ -20,8 +20,10 @@ if db_url.startswith("sqlite"):
     )
 else:
     # Configuração de produção para PostgreSQL (Neon / Render)
+    # SSL obrigatório só para hosts remotos (Neon/Render); Postgres local e do CI não tem SSL.
     connect_args = {"connect_timeout": 10}
-    if "sslmode" not in db_url:
+    host_local = make_url(db_url).host in (None, "localhost", "127.0.0.1", "::1")
+    if "sslmode" not in db_url and not host_local:
         connect_args["sslmode"] = "require"
 
     engine = create_engine(

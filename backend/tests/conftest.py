@@ -19,11 +19,15 @@ BUNDLE_TESTE_PATH = os.path.join(_TMP_DIR, "stacking_teste.joblib")
 
 def _gerar_bundle_teste() -> None:
     import numpy as np
-    from train.train import gerar_dados_sinteticos_para_teste, treinar_stacking
+    from tests.mock_data import gerar_dados_sinteticos_para_teste
+    from train.train import treinar_stacking
 
     np.random.seed(42)
-    df = gerar_dados_sinteticos_para_teste(n_samples=80)
-    treinar_stacking(df, output_path=BUNDLE_TESTE_PATH, version="sintetico-teste")
+    df_treino = gerar_dados_sinteticos_para_teste(n_samples=80)
+    df_val = gerar_dados_sinteticos_para_teste(n_samples=40)
+    # Grupos disjuntos entre treino e validação (treinar_stacking recusa sobreposição).
+    df_val["id_noticia"] = df_val["id_noticia"] + len(df_treino)
+    treinar_stacking(df_treino, df_val=df_val, output_path=BUNDLE_TESTE_PATH, version="sintetico-teste")
 
 
 _gerar_bundle_teste()

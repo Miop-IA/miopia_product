@@ -22,6 +22,7 @@ def gerar_dados_sinteticos_para_teste(n_samples: int = 80) -> pd.DataFrame:
         t_lem = " ".join([w for w in t_limpo.split() if len(w) > 3])
 
         row = {
+            "id_noticia": i,
             "texto_cru": t_cru,
             "texto_limpo": t_limpo,
             "texto_lematizado": t_lem,
