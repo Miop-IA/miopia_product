@@ -318,7 +318,6 @@ function formatQuotesAndCitations(container) {
     if (!/^[\u201c\u201d"«'']/.test(t)) {
       q.textContent = `“${t}”`;
     }
-    q.textContent = `“${t}”`;
   });
 
   // 4. Tags <blockquote> que não contenham <cite> interno
