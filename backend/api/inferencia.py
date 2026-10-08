@@ -62,8 +62,8 @@ def extrair_features_topicos(texto_lematizado: str, bundle: Dict[str, Any]) -> n
     return np.zeros(40, dtype=np.float32)
 
 
-def classificar_faixa_e_orientacao(prob_fake: float, limiar: float = 0.46) -> Tuple[str, str]:
-    """Mapeia a probabilidade final para as faixas de confiança com corte centrado no limiar 0.46."""
+def classificar_faixa_e_orientacao(prob_fake: float, limiar: float, f1_score: float = None) -> Tuple[str, str]:
+    """Mapeia a probabilidade final para as faixas de confiança com corte centrado no limiar."""
     if prob_fake < (limiar - 0.15):
         faixa = "Confiavel"
         orientacao = (
@@ -78,9 +78,10 @@ def classificar_faixa_e_orientacao(prob_fake: float, limiar: float = 0.46) -> Tu
         )
     else:
         faixa = "Suspeita"
+        f1_str = f" (F1={f1_score:.3f})" if f1_score else ""
         orientacao = (
             "Foram detectadas anomalias estilométricas e alta probabilidade de desinformação "
-            "pelo modelo Stacking (F1=0.961). Consulte agências de checagem confiáveis."
+            f"pelo modelo Stacking{f1_str}. Consulte agências de checagem confiáveis."
         )
 
     return faixa, orientacao
@@ -125,8 +126,8 @@ def predizer_risco_stacking(
     prob_fake_final = float(meta_model.predict_proba(X_meta)[0][1])
 
     limiar = bundle.get("limiar", 0.46)
-    f1_score_ref = bundle.get("f1_score", 0.961)
+    f1_score_ref = bundle.get("f1_score", 0.0)
 
-    faixa, orientacao = classificar_faixa_e_orientacao(prob_fake_final, limiar=limiar)
+    faixa, orientacao = classificar_faixa_e_orientacao(prob_fake_final, limiar, f1_score_ref)
 
     return round(prob_fake_final, 3), faixa, orientacao, f1_score_ref

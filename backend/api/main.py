@@ -111,7 +111,9 @@ def obter_contagem_avaliacoes(db: Session, noticia_id: int) -> ContagemAvaliacoe
 @app.get("/health", tags=["Monitoramento"])
 def health_check():
     """Retorna sucesso caso a API esteja operando."""
-    return {"status": "online", "environment": settings.environment, "model": "Stacking Parte C (F1=0.961)"}
+    model_info = get_current_model_info()
+    f1_str = f" (F1={model_info['f1']:.3f})" if model_info.get("f1") else ""
+    return {"status": "online", "environment": settings.environment, "model": f"Stacking Parte C{f1_str}"}
 
 
 @app.get("/ready", tags=["Monitoramento"])
