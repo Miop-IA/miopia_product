@@ -8,7 +8,7 @@ def test_model_integrity():
     e do respectivo manifesto de versão (model_manifest.json).
     """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    model_path = os.path.join(base_dir, "models", "stacking_miopia_v2.joblib")
+    model_path = os.path.join(base_dir, "models", "stacking_miopia_v3.joblib")
     manifest_path = os.path.join(base_dir, "models", "model_manifest.json")
     
     # 1. Bundle Existe
