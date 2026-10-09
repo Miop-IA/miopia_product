@@ -1,22 +1,22 @@
 {
-    "model_version": "v2",
+    "model_version": "stacking-20261009T014822Z",
     "pipeline_version": "1.0",
     "dataset_version": "fake_br_master + dataset_11",
-    "training_commit": "dev cfe684f + correções de extração (CAIXA ALTA, 'nos')",
-    "python_version": "3.13.16",
+    "training_commit": "effffd62e8f31d07a3089f23a971fc6dab513b73",
+    "python_version": "3.13.3",
     "scikit-learn": "1.9.1",
     "xgboost": "2.1.1",
     "spacy": "3.8.16",
     "spacy_model": "pt_core_news_lg",
-    "threshold": 0.45,
-    "F1": 0.9587700908455625,
-    "precision": 0.9648382559774965,
+    "threshold": 0.43,
+    "F1": 0.9581005586592178,
+    "precision": 0.9634831460674157,
     "recall": 0.9527777777777777,
-    "accuracy": 0.9590277777777778,
+    "accuracy": 0.9583333333333334,
     "confusion_matrix": [
         [
-            695,
-            25
+            694,
+            26
         ],
         [
             34,
@@ -28,5 +28,6 @@
     "n_grupos_treino": 2879,
     "n_grupos_teste": 720,
     "feature_count": 103,
-    "training_date": "2026-10-08T20:00:28.649435+00:00"
+    "training_date": "2026-10-09T01:48:29.850054+00:00",
+    "model_hash_sha256": "95a9f7a0e1e6e9ce42792017855b19b848ea47ff11bd42e66656832fd0ab2dc7"
 }
