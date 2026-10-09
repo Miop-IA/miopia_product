@@ -11,9 +11,21 @@ import scipy.stats
 import random
 import numpy as np
 
-# Fixando sementes globais para reprodutibilidade absoluta
-random.seed(42)
-np.random.seed(42)
+from dataclasses import dataclass, asdict
+
+@dataclass
+class TrainingConfig:
+    random_state: int = 42
+    n_splits_oof: int = 5
+    n_splits_calib: int = 3
+    xgb_n_estimators: int = 150
+    xgb_max_depth: int = 4
+    xgb_learning_rate: float = 0.08
+    xgb_subsample: float = 0.8
+    lda_max_iter: int = 15
+    nmf_max_iter: int = 200
+    svm_max_iter: int = 2000
+    is_official_run: bool = False
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.svm import LinearSVC
@@ -70,11 +82,15 @@ def treinar_stacking(
     df_val: pd.DataFrame,
     output_path: str = None,
     version: str = None,
+    config: TrainingConfig = None,
 ) -> Dict:
     """
     Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística
     usando previsões Out-of-Fold (OOF) baseadas no StratifiedGroupKFold por grupo_identidade.
     """
+    if config is None:
+        config = TrainingConfig()
+        
     if df_val is None:
         raise ValueError("O conjunto de teste/validação (df_val) é obrigatório para evitar avaliação viciada no treino.")
         
@@ -92,15 +108,15 @@ def treinar_stacking(
     # -------------------------------------------------------------
     # 0. Geração de Predições Out-of-Fold (OOF)
     # -------------------------------------------------------------
-    logger.info("Gerando predições OOF com StratifiedGroupKFold (5 splits)...")
-    gkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
+    logger.info(f"Gerando predições OOF com StratifiedGroupKFold ({config.n_splits_oof} splits)...")
+    gkf = StratifiedGroupKFold(n_splits=config.n_splits_oof, shuffle=True, random_state=config.random_state)
     
     p_char_oof = np.zeros(len(df_treino))
     p_word_oof = np.zeros(len(df_treino))
     p_denso_oof = np.zeros(len(df_treino))
 
     for fold, (train_idx, val_idx) in enumerate(gkf.split(df_treino, y_train, groups=groups_train)):
-        logger.info(f"Processando fold {fold + 1}/5...")
+        logger.info(f"Processando fold {fold + 1}/{config.n_splits_oof}...")
         df_fold_train = df_treino.iloc[train_idx]
         df_fold_val = df_treino.iloc[val_idx]
         y_fold_train = y_train[train_idx]
@@ -109,9 +125,8 @@ def treinar_stacking(
         tfidf_char_fold = TfidfVectorizer(analyzer="char", ngram_range=(3, 5), min_df=5, max_features=50000, sublinear_tf=True)
         X_char_fold_train = tfidf_char_fold.fit_transform(df_fold_train["texto_cru"])
         X_char_fold_val = tfidf_char_fold.transform(df_fold_val["texto_cru"])
-        # Usa GroupKFold com 3 splits para calibração interna respeitando id_noticia
-        cv_char_fold = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(X_char_fold_train, y_fold_train, groups=df_fold_train["grupo_identidade"]))
-        svm_char_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=cv_char_fold)
+        cv_char_fold = list(StratifiedGroupKFold(n_splits=config.n_splits_calib, shuffle=True, random_state=config.random_state).split(X_char_fold_train, y_fold_train, groups=df_fold_train["grupo_identidade"]))
+        svm_char_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=config.random_state, max_iter=config.svm_max_iter), cv=cv_char_fold)
         svm_char_fold.fit(X_char_fold_train, y_fold_train)
         p_char_oof[val_idx] = svm_char_fold.predict_proba(X_char_fold_val)[:, 1]
         
@@ -119,9 +134,8 @@ def treinar_stacking(
         tfidf_word_fold = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=30000, sublinear_tf=True)
         X_word_fold_train = tfidf_word_fold.fit_transform(df_fold_train["texto_limpo"])
         X_word_fold_val = tfidf_word_fold.transform(df_fold_val["texto_limpo"])
-        # Usa GroupKFold com 3 splits para calibração interna respeitando id_noticia
-        cv_word_fold = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(X_word_fold_train, y_fold_train, groups=df_fold_train["grupo_identidade"]))
-        svm_word_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=cv_word_fold)
+        cv_word_fold = list(StratifiedGroupKFold(n_splits=config.n_splits_calib, shuffle=True, random_state=config.random_state).split(X_word_fold_train, y_fold_train, groups=df_fold_train["grupo_identidade"]))
+        svm_word_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=config.random_state, max_iter=config.svm_max_iter), cv=cv_word_fold)
         svm_word_fold.fit(X_word_fold_train, y_fold_train)
         p_word_oof[val_idx] = svm_word_fold.predict_proba(X_word_fold_val)[:, 1]
         
@@ -130,10 +144,10 @@ def treinar_stacking(
         X_lemmas_fold_train = tfidf_lemmas_fold.fit_transform(df_fold_train["texto_lematizado"])
         X_lemmas_fold_val = tfidf_lemmas_fold.transform(df_fold_val["texto_lematizado"])
         
-        lda_8_fold = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_fold_train)
-        nmf_8_fold = NMF(n_components=8, random_state=42, max_iter=200).fit(X_lemmas_fold_train)
-        lda_30_fold = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1).fit(X_lemmas_fold_train)
-        nmf_30_fold = NMF(n_components=30, random_state=42, max_iter=200).fit(X_lemmas_fold_train)
+        lda_8_fold = LatentDirichletAllocation(n_components=8, random_state=config.random_state, max_iter=config.lda_max_iter, n_jobs=-1).fit(X_lemmas_fold_train)
+        nmf_8_fold = NMF(n_components=8, random_state=config.random_state, max_iter=config.nmf_max_iter).fit(X_lemmas_fold_train)
+        lda_30_fold = LatentDirichletAllocation(n_components=30, random_state=config.random_state, max_iter=config.lda_max_iter, n_jobs=-1).fit(X_lemmas_fold_train)
+        nmf_30_fold = NMF(n_components=30, random_state=config.random_state, max_iter=config.nmf_max_iter).fit(X_lemmas_fold_train)
         
         scaler_estilo_fold = StandardScaler()
         X_estilo_fold_train = scaler_estilo_fold.fit_transform(df_fold_train[ESTILO_FEATURE_NAMES].values)
@@ -145,7 +159,7 @@ def treinar_stacking(
             extrair_vetor_k_mais_3(nmf_30_fold, X_lemmas_fold_train)
         ])
         
-        xgb_fold = XGBClassifier(n_estimators=150, max_depth=4, learning_rate=0.08, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1)
+        xgb_fold = XGBClassifier(n_estimators=config.xgb_n_estimators, max_depth=config.xgb_max_depth, learning_rate=config.xgb_learning_rate, subsample=config.xgb_subsample, colsample_bytree=0.8, eval_metric="logloss", random_state=config.random_state, n_jobs=-1)
         xgb_fold.fit(X_denso_fold_train, y_fold_train)
         
         X_estilo_fold_val = scaler_estilo_fold.transform(df_fold_val[ESTILO_FEATURE_NAMES].values)
@@ -164,17 +178,15 @@ def treinar_stacking(
     logger.info("Treinando modelos-base finais em todo o conjunto de desenvolvimento...")
     tfidf_char = TfidfVectorizer(analyzer="char", ngram_range=(3, 5), min_df=5, max_features=50000, sublinear_tf=True)
     X_char_train = tfidf_char.fit_transform(df_treino["texto_cru"])
-    base_svm_char = LinearSVC(C=1.0, random_state=42, max_iter=2000)
-    # Calibração explícita group-aware para o modelo final
-    cv_char_final = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(X_char_train, y_train, groups=df_treino["grupo_identidade"]))
+    base_svm_char = LinearSVC(C=1.0, random_state=config.random_state, max_iter=config.svm_max_iter)
+    cv_char_final = list(StratifiedGroupKFold(n_splits=config.n_splits_calib, shuffle=True, random_state=config.random_state).split(X_char_train, y_train, groups=df_treino["grupo_identidade"]))
     svm_char = CalibratedClassifierCV(estimator=base_svm_char, cv=cv_char_final)
     svm_char.fit(X_char_train, y_train)
 
     tfidf_word = TfidfVectorizer(ngram_range=(1, 2), min_df=3, max_features=30000, sublinear_tf=True)
     X_word_train = tfidf_word.fit_transform(df_treino["texto_limpo"])
-    base_svm_word = LinearSVC(C=1.0, random_state=42, max_iter=2000)
-    # Calibração explícita group-aware para o modelo final
-    cv_word_final = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(X_word_train, y_train, groups=df_treino["grupo_identidade"]))
+    base_svm_word = LinearSVC(C=1.0, random_state=config.random_state, max_iter=config.svm_max_iter)
+    cv_word_final = list(StratifiedGroupKFold(n_splits=config.n_splits_calib, shuffle=True, random_state=config.random_state).split(X_word_train, y_train, groups=df_treino["grupo_identidade"]))
     svm_word = CalibratedClassifierCV(estimator=base_svm_word, cv=cv_word_final)
     svm_word.fit(X_word_train, y_train)
 
@@ -182,17 +194,17 @@ def treinar_stacking(
     X_lemmas_train = tfidf_lemmas.fit_transform(df_treino["texto_lematizado"])
 
     # Modelos com k=8
-    lda_8 = LatentDirichletAllocation(n_components=8, random_state=42, max_iter=15, n_jobs=-1)
+    lda_8 = LatentDirichletAllocation(n_components=8, random_state=config.random_state, max_iter=config.lda_max_iter, n_jobs=-1)
     lda_8.fit(X_lemmas_train)
 
-    nmf_8 = NMF(n_components=8, random_state=42, max_iter=200)
+    nmf_8 = NMF(n_components=8, random_state=config.random_state, max_iter=config.nmf_max_iter)
     nmf_8.fit(X_lemmas_train)
 
     # Modelos com k=30
-    lda_30 = LatentDirichletAllocation(n_components=30, random_state=42, max_iter=15, n_jobs=-1)
+    lda_30 = LatentDirichletAllocation(n_components=30, random_state=config.random_state, max_iter=config.lda_max_iter, n_jobs=-1)
     lda_30.fit(X_lemmas_train)
 
-    nmf_30 = NMF(n_components=30, random_state=42, max_iter=200)
+    nmf_30 = NMF(n_components=30, random_state=config.random_state, max_iter=config.nmf_max_iter)
     nmf_30.fit(X_lemmas_train)
 
     v_lda8 = extrair_vetor_k_mais_3(lda_8, X_lemmas_train)
@@ -211,13 +223,13 @@ def treinar_stacking(
         raise ValueError(f"Vetor denso com {X_denso_train.shape[1]} features, contrato exige {FEATURE_COUNT}")
 
     xgb_denso = XGBClassifier(
-        n_estimators=150,
-        max_depth=4,
-        learning_rate=0.08,
-        subsample=0.8,
+        n_estimators=config.xgb_n_estimators,
+        max_depth=config.xgb_max_depth,
+        learning_rate=config.xgb_learning_rate,
+        subsample=config.xgb_subsample,
         colsample_bytree=0.8,
         eval_metric="logloss",
-        random_state=42,
+        random_state=config.random_state,
         n_jobs=-1
     )
     xgb_denso.fit(X_denso_train, y_train)
@@ -228,9 +240,9 @@ def treinar_stacking(
 
     logger.info("A calcular limiar ótimo via predições cruzadas OOF do próprio Meta-Modelo...")
     X_meta_train = np.hstack([p_char_oof.reshape(-1, 1), p_word_oof.reshape(-1, 1), p_denso_oof.reshape(-1, 1)])
-    meta_lr = LogisticRegression(C=1.0, solver="lbfgs", random_state=42)
+    meta_lr = LogisticRegression(C=1.0, solver="lbfgs", random_state=config.random_state)
     
-    cv_meta = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
+    cv_meta = StratifiedGroupKFold(n_splits=config.n_splits_oof, shuffle=True, random_state=config.random_state)
     import sklearn.model_selection
     p_fake_oof = sklearn.model_selection.cross_val_predict(
         meta_lr, X_meta_train, y_train, 
@@ -334,6 +346,7 @@ def treinar_stacking(
         "feature_order": list(FEATURE_ORDER),
         "feature_count": FEATURE_COUNT,
         "pipeline_version": "1.0",
+        "training_config": asdict(config),
         "version": version or datetime.now(timezone.utc).strftime("stacking-%Y%m%dT%H%M%SZ"),
     }
 
@@ -346,18 +359,25 @@ def treinar_stacking(
         import shutil
         import subprocess
 
-        # Validação Estrita de Reprodutibilidade (Fase 7)
+        # Validação Estrita de Reprodutibilidade (Fase 7 e 8)
         try:
             git_status = subprocess.check_output(["git", "status", "--porcelain"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
-            if git_status:
-                raise RuntimeError("Repositório sujo (uncommitted changes). Commit as alterações antes de treinar o artefato.")
+            if git_status and config.is_official_run:
+                raise RuntimeError("Repositório sujo (uncommitted changes). Commit as alterações antes de treinar o artefato oficial.")
             
             commit_hash = subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
             ).decode("utf-8").strip()
+            
+            if git_status:
+                commit_hash += " (dirty)"
+                
         except Exception as e:
-            logger.error("A geração de artefatos oficiais requer um estado limpo no Git.")
-            raise RuntimeError("Execução não reprodutível. Artefato oficial bloqueado.") from e
+            if config.is_official_run:
+                logger.error("A geração de artefatos oficiais requer um estado limpo no Git.")
+                raise RuntimeError("Execução não reprodutível. Artefato oficial bloqueado.") from e
+            else:
+                commit_hash = "desconhecido"
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         temp_dir = tempfile.mkdtemp(dir=os.path.dirname(output_path))
@@ -383,7 +403,9 @@ def treinar_stacking(
                 "model_version": bundle["version"],
                 "pipeline_version": bundle["pipeline_version"],
                 "dataset_version": bundle["dataset_version"],
+                "training_config": bundle["training_config"],
                 "training_commit": commit_hash,
+                "is_official": config.is_official_run,
                 "python_version": sys.version.split()[0],
                 "scikit-learn": sklearn.__version__,
                 "xgboost": xgboost.__version__,
