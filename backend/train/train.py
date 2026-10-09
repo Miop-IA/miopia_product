@@ -7,7 +7,11 @@ import joblib
 import numpy as np
 import pandas as pd
 import scipy.stats
+import random
 
+# Fixando sementes globais para reprodutibilidade absoluta (Fase 21)
+np.random.seed(42)
+random.seed(42)
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.svm import LinearSVC
