@@ -285,11 +285,11 @@
   /* =============================================================
      API
      ============================================================= */
-  function analisar(texto, url, numLinks) {
+  function analisar(texto, url) {
     return fetch("http://localhost:8000/analisar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto: texto, url: url || "", num_links: numLinks })
+      body: JSON.stringify({ texto: texto, url: url || "" })
     }).then(function(r) {
       if (r.ok) return r.json();
       // Mostra o motivo devolvido pela API (ex.: texto com menos de 30 palavras)
@@ -432,7 +432,7 @@
   }
 
   function enviaParaAPI(texto, url, tituloExtraido, links) {
-    analisar(texto, url, links).then(function(dados) {
+    analisar(texto, url).then(function(dados) {
       esconde(loadingState);
       esconde(errorState);
       mostra(conteudoAnalise);

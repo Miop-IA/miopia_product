@@ -23,7 +23,7 @@ from api.bundle_spec import (
 _stacking_bundle = None
 
 CAMINHO_PADRAO_MODELO = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "stacking_miopia_v2.joblib"
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "stacking_miopia_v3.joblib"
 )
 
 _TEXTO_SMOKE = "verificacao de integridade do modelo de producao durante a inicializacao da api"

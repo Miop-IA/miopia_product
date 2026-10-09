@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     )
     model_path: Optional[str] = Field(
         default=None,
-        description="Caminho do bundle .joblib do Stacking (padrão: backend/models/stacking_miopia_v2.joblib)"
+        description="Caminho do bundle .joblib do Stacking (padrão: backend/models/stacking_miopia_v3.joblib)"
     )
     environment: str = Field(
         default="development",

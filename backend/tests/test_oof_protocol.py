@@ -69,8 +69,12 @@ def test_metamodelo_usa_oof(tmp_path):
         captured_shapes.append(X.shape)
         return real_fit(self, X, y, *args, **kwargs)
 
+    def fake_dump(bundle, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"dummy")
+
     with patch("train.train.LogisticRegression.fit", fake_fit):
-        with patch("train.train.joblib.dump"), patch("train.train.F1_MINIMO", 0.0):  # dados dummy não atingem o F1 mínimo
+        with patch("train.train.joblib.dump", side_effect=fake_dump), patch("train.train.F1_MINIMO", 0.0):  # dados dummy não atingem o F1 mínimo
             fake_path = os.path.join(tmp_path, "fake_path.joblib")
             treinar_stacking(df_dummy, df_val=df_val, output_path=fake_path)
     

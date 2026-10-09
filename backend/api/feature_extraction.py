@@ -82,7 +82,7 @@ def calcular_rc_spelling_errors(spell_candidates: List[str], num_words: int) -> 
     return float(qtd_erros / num_words)
 
 
-def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500, num_links_param: Optional[int] = None) -> Tuple[str, str, int]:
+def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500) -> Tuple[str, str, int]:
     """
     Função unificada de preprocessing e truncamento para treino e inferência.
     Garante que o texto seja limpo e truncado da mesma forma nos dois pipelines.
@@ -96,11 +96,8 @@ def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500, num_links_para
     palavras_cruas = texto_sanitizado.split()
     texto_cru_trunc = " ".join(palavras_cruas[:max_tokens])
 
-    if num_links_param is not None:
-        num_links = num_links_param
-    else:
-        links = re.findall(r"(?:https?://|www\.)[^\s]+", texto_cru_trunc)
-        num_links = len(links)
+    links = re.findall(r"(?:https?://|www\.)[^\s]+", texto_cru_trunc)
+    num_links = len(links)
 
     texto_limpo = re.sub(r"(?:https?://|www\.)[^\s]+", "", texto_cru_trunc)
     # Importante: texto_limpo é convertido para lower case para paridade total com o TF-IDF
@@ -109,14 +106,14 @@ def preparar_texto_comum(texto_bruto: str, max_tokens: int = 500, num_links_para
     return texto_cru_trunc, texto_limpo, num_links
 
 
-def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500, num_links_param: Optional[int] = None) -> Tuple[Dict[str, float], Dict[str, str]]:
+def extrair_pacote_analise(texto_bruto: str, max_tokens: int = 500) -> Tuple[Dict[str, float], Dict[str, str]]:
     """
     Processa o texto sob o limite de truncamento e retorna:
     1. Dicionário das 15 features estilométricas (com MATTR em trunc_diversity).
     2. Dicionário com as 3 representações de texto: texto_cru, texto_limpo, texto_lematizado.
     """
     import pandas as pd
-    texto_cru_trunc, texto_limpo, num_links = preparar_texto_comum(texto_bruto, max_tokens, num_links_param)
+    texto_cru_trunc, texto_limpo, num_links = preparar_texto_comum(texto_bruto, max_tokens)
 
     doc = nlp(texto_limpo)
     sents = list(doc.sents)

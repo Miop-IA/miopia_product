@@ -104,16 +104,15 @@ def test_paridade_preprocessing_treino_producao():
     assert "www" not in limpo
 
 
-def test_link_density_com_num_links_payload():
-    """Verifica se o backend aceita e prioriza o num_links vindo do payload (DOM) na hora de calcular link_density."""
-    texto_sem_link_literal = "Este é um texto gigante sem nenhuma url literal escrita, mas que no HTML tem links reais. " * 20
+def test_link_density_regex_apenas():
+    """Verifica se a link_density usa apenas regex no texto cru, ignorando dom."""
+    texto_sem_link_literal = "Este é um texto gigante sem nenhuma url literal escrita. " * 20
     
-    # Se não enviar num_links, a link_density deve ser 0 (pois não há http/www escrito)
     features_sem, _ = extrair_pacote_analise(texto_sem_link_literal)
     assert features_sem["link_density"] == 0.0
     
-    # Se enviar num_links=5, a link_density deve ser > 0 (usa o valor exato do DOM)
-    features_com, _ = extrair_pacote_analise(texto_sem_link_literal, num_links_param=5)
+    texto_com_link = texto_sem_link_literal + " Acesse https://github.com para mais."
+    features_com, _ = extrair_pacote_analise(texto_com_link)
     assert features_com["link_density"] > 0.0
 
 

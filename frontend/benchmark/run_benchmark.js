@@ -156,7 +156,7 @@ async function runBenchmark() {
                 const response = await fetch("http://localhost:8000/analisar", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ texto: result.text, url: url, num_links: result.links || 0 })
+                    body: JSON.stringify({ texto: result.text, url: url })
                 });
 
                 if (expected.expected_status && expected.expected_status !== 200) {
