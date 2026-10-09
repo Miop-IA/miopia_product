@@ -43,8 +43,7 @@ def test_garantia_kfold_sem_vazamento():
 def test_metamodelo_usa_oof(tmp_path):
     """
     Roda um mock do treinamento com um dataset minúsculo para provar que a
-    Regressão Logística (Metamodelo) recebe como entrada de treino as
-    matrizes OOF populadas (dimensão e integridade), e não as matrizes originais.
+    Regressão Logística (Metamodelo) usa cross_val_predict para achar o limiar OOF independentemente.
     """
     N = 30
     df_dummy = pd.DataFrame({
@@ -63,28 +62,26 @@ def test_metamodelo_usa_oof(tmp_path):
         df_dummy[f] = np.random.rand(N)
         df_val[f] = np.random.rand(N)
     
-    from sklearn.linear_model import LogisticRegression
-    real_fit = LogisticRegression.fit
-    captured_shapes = []
+    captured_cvp_shapes = []
     
-    def fake_fit(self, X, y, *args, **kwargs):
-        captured_shapes.append(X.shape)
-        return real_fit(self, X, y, *args, **kwargs)
+    def fake_cvp(estimator, X, y=None, **kwargs):
+        captured_cvp_shapes.append(X.shape)
+        # return dummy probabilities so pipeline doesn't crash
+        import numpy as np
+        return np.random.rand(X.shape[0], 2)
 
     def fake_dump(bundle, path, **kwargs):
         with open(path, "wb") as f:
             f.write(b"dummy")
 
-    with patch("train.train.LogisticRegression.fit", fake_fit):
-        with patch("train.train.joblib.dump", side_effect=fake_dump), patch("train.train.F1_MINIMO", 0.0):  # dados dummy não atingem o F1 mínimo
+    with patch("sklearn.model_selection.cross_val_predict", side_effect=fake_cvp):
+        with patch("train.train.joblib.dump", side_effect=fake_dump):
             fake_path = os.path.join(tmp_path, "fake_path.joblib")
             treinar_stacking(df_dummy, df_val=df_val, output_path=fake_path)
     
-    # Verifica se a regressão logística foi chamada
-    assert len(captured_shapes) > 0, "O metamodelo (LogisticRegression) não foi treinado."
+    assert len(captured_cvp_shapes) > 0, "O metamodelo não utilizou cross_val_predict."
     
-    X_meta_shape = captured_shapes[0]
+    X_meta_shape = captured_cvp_shapes[0]
     
     # 3. Meta-modelo usa OOF: a matriz X_meta_train deve ter exatas 3 colunas 
-    # (probabilidade char, probabilidade word, probabilidade denso) para N amostras.
     assert X_meta_shape == (N, 3), f"Matriz OOF para o metamodelo tem shape incorreto: {X_meta_shape}. Esperado: {(N, 3)}"
