@@ -80,9 +80,22 @@ async def lifespan(app: FastAPI):
     # Bundle ausente, corrompido ou incompatível impede a API de subir (MI-17).
     try:
         bundle = carregar_bundle_stacking()
+        
+        # Warmup do modelo: executa uma predição dummy para instanciar as pools de threads
+        # e evitar cold start / latência na primeira requisição (Fase 6: Otimização)
+        from api.feature_extraction import extrair_pacote_analise
+        from api.inferencia import predizer_risco_stacking
+        dummy_text = "O Banco Central anunciou nesta terça-feira a manutenção da taxa básica de juros em 10,5% ao ano."
+        feats_dummy, rep_dummy = extrair_pacote_analise(dummy_text)
+        _ = predizer_risco_stacking(feats_dummy, rep_dummy)
+        logger.info("Warmup do pipeline Stacking (SpaCy + Sklearn + XGBoost) concluído com sucesso.")
+        
     except ModeloInvalidoError as e:
         logger.critical(f"Modelo de produção inválido; abortando startup: {e}")
         raise
+    except Exception as e:
+        logger.warning(f"Startup concluído, mas houve erro no Warmup: {e}")
+        
     logger.info(f"Modelo de produção pronto: {resumo_bundle(bundle)}")
     yield
 
@@ -265,12 +278,27 @@ def analisar_noticia(payload: AnaliseRequest, db: Session = Depends(get_db)):
         modelo_id=modelo_atual.id,
         **features,
     )
-    db.add(nova_noticia)
-    db.commit()
-    db.refresh(nova_noticia)
+    
+    from sqlalchemy.exc import IntegrityError
+    
+    try:
+        db.add(nova_noticia)
+        db.commit()
+        db.refresh(nova_noticia)
+    except IntegrityError:
+        db.rollback()
+        # Tratamento de Race Condition: se dois requests simultâneos analisaram o mesmo texto inédito
+        noticia_existente = db.query(Noticia).filter(
+            Noticia.hash_texto == hash_txt,
+            Noticia.modelo_id == modelo_atual.id
+        ).first()
+        if noticia_existente:
+            nova_noticia = noticia_existente
+        else:
+            raise HTTPException(status_code=500, detail="Erro de integridade ao salvar a análise.")
 
     metricas_dto = MetricasEstilometricas(**features)
-    avaliacoes = ContagemAvaliacoes(verdadeiro=0, duvidoso=0, falso=0, total=0)
+    avaliacoes = obter_contagem_avaliacoes(db, nova_noticia.id) if nova_noticia.id else ContagemAvaliacoes(verdadeiro=0, duvidoso=0, falso=0, total=0)
     texto_trunc = textos.get("texto_cru", texto_puro)
     total_palavras_trunc = len(texto_trunc.split()) if texto_trunc else 0
 
@@ -319,9 +347,22 @@ def registrar_avaliacao(payload: AvaliacaoRequest, db: Session = Depends(get_db)
             client_id=payload.client_id,
             avaliacao=payload.avaliacao,
         )
-        db.add(novo_voto)
-        db.commit()
-        msg = "Voto registrado com sucesso."
+        try:
+            db.add(novo_voto)
+            db.commit()
+            msg = "Voto registrado com sucesso."
+        except IntegrityError:
+            db.rollback()
+            avaliacao_existente = db.query(Avaliacao).filter(
+                Avaliacao.noticia_id == payload.noticia_id,
+                Avaliacao.client_id == payload.client_id,
+            ).first()
+            if avaliacao_existente:
+                avaliacao_existente.avaliacao = payload.avaliacao
+                db.commit()
+                msg = "Voto atualizado com sucesso."
+            else:
+                raise HTTPException(status_code=500, detail="Erro de integridade ao salvar a avaliação.")
 
     contagem = obter_contagem_avaliacoes(db, payload.noticia_id)
     return AvaliacaoResponse(sucesso=True, mensagem=msg, avaliacoes_atualizadas=contagem)

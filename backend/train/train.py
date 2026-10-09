@@ -8,7 +8,12 @@ import numpy as np
 import pandas as pd
 import scipy.stats
 
-# Fixando sementes globais para reprodutibilidade absoluta (Fase 21)
+import random
+import numpy as np
+
+# Fixando sementes globais para reprodutibilidade absoluta
+random.seed(42)
+np.random.seed(42)
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.svm import LinearSVC
@@ -292,7 +297,8 @@ def treinar_stacking(
     cm_obtido = confusion_matrix(y_eval, y_pred).tolist()
     
     logger.info(f"F1-Score Teste (limiar {limiar_decisao}): {f1_obtido:.4f}")
-    logger.info("\n" + classification_report(y_eval, y_pred, target_names=["Verdadeiro", "Falso"]))
+    report_teste = classification_report(y_eval, y_pred, target_names=["Verdadeiro", "Falso"])
+    logger.info("\n" + report_teste)
     
     # Removido o bloqueio F1_MINIMO baseado no conjunto de teste para evitar viés de seleção.
 
@@ -318,6 +324,7 @@ def treinar_stacking(
         "recall": float(rec_obtido),
         "accuracy": float(acc_obtido),
         "confusion_matrix": cm_obtido,
+        "classification_report_teste": report_teste,
         "n_exemplos_treino": len(df_treino),
         "n_exemplos_teste": len(df_eval),
         "n_grupos_treino": df_treino['grupo_identidade'].nunique() if 'grupo_identidade' in df_treino.columns else 0,
@@ -395,8 +402,24 @@ def treinar_stacking(
             manifest_path = os.path.join(os.path.dirname(output_path), "model_manifest.json")
             os.replace(temp_manifest_path, manifest_path)
             os.replace(temp_model_path, output_path)
-            
-            logger.info(f"Bundle e manifest serializados atomicamente com sucesso em: {output_path}")
+
+            # Gravar report em markdown
+            md_path = os.path.join(os.path.dirname(output_path), "metrics_report.md")
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(f"# Relatório de Validação Stacking - {bundle['version']}\n\n")
+                f.write(f"**Data:** {manifest['training_date']}\n")
+                f.write(f"**Hash SHA256:** `{model_hash}`\n")
+                f.write(f"**Limiar OOF:** {bundle['limiar']}\n\n")
+                f.write("## Performance (Teste)\n")
+                f.write(f"- **F1-Score**: {bundle['f1_score']:.4f}\n")
+                f.write(f"- **Accuracy**: {bundle['accuracy']:.4f}\n\n")
+                f.write("### Classification Report\n```text\n")
+                f.write(bundle['classification_report_teste'])
+                f.write("\n```\n\n### Matriz de Confusão\n```text\n")
+                f.write(str(bundle['confusion_matrix']))
+                f.write("\n```\n")
+
+            logger.info(f"Bundle, manifest e metrics_report.md serializados atomicamente com sucesso em: {output_path}")
             
         except Exception as e:
             logger.error(f"Erro durante o empacotamento atômico: {e}")
