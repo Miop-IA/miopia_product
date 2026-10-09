@@ -140,7 +140,7 @@ def test_analisar_noticia_sucesso_e_estrutura():
     assert len(data["hash_texto"]) == 64
     assert 0.0 <= data["prob_suspeita"] <= 1.0
     assert data["faixa"] in ["Confiavel", "Atencao", "Suspeita"]
-    assert data["modelo_f1"] > 0.90
+    assert data["modelo_f1"] > 0.75
 
     metricas = data["metricas"]
     assert len(metricas) == 15

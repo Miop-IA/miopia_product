@@ -16,7 +16,7 @@ def test_regression_golden_samples(monkeypatch):
     from api.config import get_settings
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    real_model_path = os.path.join(base_dir, "models", "stacking_miopia_v3.joblib")
+    real_model_path = os.path.join(base_dir, "models", "stacking_miopia_v4_candidato.joblib")
     if not os.path.exists(real_model_path):
         pytest.skip(f"Modelo real não encontrado em {real_model_path}")
         
