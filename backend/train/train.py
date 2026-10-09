@@ -333,6 +333,7 @@ def treinar_stacking(
         "feature_names_estilo": list(ESTILO_FEATURE_NAMES),
         "feature_order": list(FEATURE_ORDER),
         "feature_count": FEATURE_COUNT,
+        "pipeline_version": "1.0",
         "version": version or datetime.now(timezone.utc).strftime("stacking-%Y%m%dT%H%M%SZ"),
     }
 
@@ -343,6 +344,20 @@ def treinar_stacking(
         import hashlib
         import tempfile
         import shutil
+        import subprocess
+
+        # Validação Estrita de Reprodutibilidade (Fase 7)
+        try:
+            git_status = subprocess.check_output(["git", "status", "--porcelain"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
+            if git_status:
+                raise RuntimeError("Repositório sujo (uncommitted changes). Commit as alterações antes de treinar o artefato.")
+            
+            commit_hash = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+            ).decode("utf-8").strip()
+        except Exception as e:
+            logger.error("A geração de artefatos oficiais requer um estado limpo no Git.")
+            raise RuntimeError("Execução não reprodutível. Artefato oficial bloqueado.") from e
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         temp_dir = tempfile.mkdtemp(dir=os.path.dirname(output_path))
@@ -362,17 +377,11 @@ def treinar_stacking(
             model_hash = sha256_hash.hexdigest()
 
             # Gerar manifesto
-            import json, subprocess, sklearn, xgboost, spacy
-            try:
-                commit_hash = subprocess.check_output(
-                    ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
-                ).decode("utf-8").strip()
-            except Exception:
-                commit_hash = "desconhecido"
+            import json, sklearn, xgboost, spacy
                 
             manifest = {
                 "model_version": bundle["version"],
-                "pipeline_version": "1.0",
+                "pipeline_version": bundle["pipeline_version"],
                 "dataset_version": bundle["dataset_version"],
                 "training_commit": commit_hash,
                 "python_version": sys.version.split()[0],
@@ -397,6 +406,10 @@ def treinar_stacking(
             
             with open(temp_manifest_path, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=4)
+                
+            # Validar os dois artefatos provisórios juntos antes de publicar
+            from api.inferencia import _verificar_manifesto
+            _verificar_manifesto(bundle, temp_model_path)
                 
             # Mover atomicamente (os.replace garante overwrite)
             manifest_path = os.path.join(os.path.dirname(output_path), "model_manifest.json")

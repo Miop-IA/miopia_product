@@ -99,6 +99,30 @@ def test_falha_manifesto_inconsistente(modelo_em):
     _assert_503(_analisar_sem_lifespan())
 
 
+def test_falha_manifesto_hash_sha256_divergente(modelo_em):
+    modelo_em(mutar_manifesto=lambda m: m.update({"model_hash_sha256": "12345fakehash67890"}))
+    _assert_503(_analisar_sem_lifespan())
+
+
+def test_falha_manifesto_model_version_divergente(modelo_em):
+    modelo_em(mutar_manifesto=lambda m: m.update({"model_version": "v_incompativel"}))
+    _assert_503(_analisar_sem_lifespan())
+
+
+def test_falha_manifesto_pipeline_version_divergente(modelo_em):
+    modelo_em(mutar_manifesto=lambda m: m.update({"pipeline_version": "99.9"}))
+    _assert_503(_analisar_sem_lifespan())
+
+
+def test_falha_joblib_byte_alterado_hash_invalido(modelo_em):
+    modelo_em()
+    caminho = os.environ["MODEL_PATH"]
+    # Append 1 byte para quebrar a assinatura SHA256 sem necessariamente quebrar o parser do joblib
+    with open(caminho, "ab") as f:
+        f.write(b"\x00")
+    _assert_503(_analisar_sem_lifespan())
+
+
 def test_startup_recusa_bundle_invalido(modelo_em):
     from api.bundle_spec import ModeloInvalidoError
 

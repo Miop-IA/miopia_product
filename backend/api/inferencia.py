@@ -73,6 +73,7 @@ def carregar_bundle_stacking(caminho: Optional[str] = None) -> Dict[str, Any]:
 def _verificar_manifesto(bundle: Dict[str, Any], model_path: str) -> None:
     """O model_manifest.json ao lado do .joblib precisa existir e bater com o bundle."""
     import json
+    import hashlib
 
     manifest_path = os.path.join(os.path.dirname(model_path), "model_manifest.json")
     if not os.path.exists(manifest_path):
@@ -81,12 +82,33 @@ def _verificar_manifesto(bundle: Dict[str, Any], model_path: str) -> None:
         manifest = json.load(f)
 
     problemas = []
+    
+    # 1. Validação do SHA-256 (Fase 7)
+    manifest_hash = manifest.get("model_hash_sha256")
+    if not manifest_hash:
+        problemas.append("manifesto inconsistente: model_hash_sha256 ausente")
+    else:
+        sha256_hash = hashlib.sha256()
+        with open(model_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        real_hash = sha256_hash.hexdigest()
+        if real_hash != manifest_hash:
+            problemas.append(f"manifesto inconsistente: hash real ({real_hash}) diverge do manifesto ({manifest_hash})")
+
+    # 2. Compatibilidade Bundle vs Manifesto
+    if manifest.get("model_version") != bundle.get("version"):
+        problemas.append("manifesto inconsistente: model_version diverge do bundle")
+    if manifest.get("pipeline_version") != bundle.get("pipeline_version"):
+        problemas.append("manifesto inconsistente: pipeline_version diverge do bundle")
+    
     if manifest.get("feature_count") != FEATURE_COUNT:
         problemas.append("manifesto inconsistente: feature_count inválido")
     if abs(float(manifest.get("threshold", -1.0)) - float(bundle["limiar"])) > 1e-4:
         problemas.append("manifesto inconsistente: divergência no threshold")
     if abs(float(manifest.get("F1", -1.0)) - float(bundle["f1_score"])) > 1e-4:
         problemas.append("manifesto inconsistente: divergência no F1")
+        
     if problemas:
         raise BundleIncompativelError(problemas)
 

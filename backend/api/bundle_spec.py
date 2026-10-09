@@ -77,23 +77,20 @@ CHAVES_OBRIGATORIAS = (
     "limiar",
     "f1_score",
     "version",
+    "pipeline_version",
     "feature_order",
     "feature_count",
     "feature_names_estilo",
 )
 
-
 class ModeloInvalidoError(RuntimeError):
     """Base: o modelo de produção não pode ser usado. A API não deve servir classificações."""
-
 
 class ModeloAusenteError(ModeloInvalidoError, FileNotFoundError):
     """O arquivo do bundle não existe."""
 
-
 class ModeloCorrompidoError(ModeloInvalidoError):
     """O arquivo existe mas não pôde ser desserializado."""
-
 
 class BundleIncompativelError(ModeloInvalidoError):
     """O bundle foi carregado mas viola o contrato (chaves, dimensões, classes, metadados)."""
@@ -104,20 +101,16 @@ class BundleIncompativelError(ModeloInvalidoError):
             "Bundle do modelo incompatível com o contrato de produção:\n- " + "\n- ".join(problemas)
         )
 
-
 def _numero_real(valor: Any) -> bool:
     return isinstance(valor, (int, float)) and not isinstance(valor, bool) and math.isfinite(float(valor))
-
 
 def _classes(modelo: Any) -> Any:
     classes = getattr(modelo, "classes_", None)
     return None if classes is None else [int(c) for c in list(classes)]
 
-
 def _tamanho_vocabulario(vetorizador: Any) -> Any:
     vocab = getattr(vetorizador, "vocabulary_", None)
     return None if vocab is None else len(vocab)
-
 
 def validar_bundle(bundle: Any) -> None:
     """
@@ -137,6 +130,10 @@ def validar_bundle(bundle: Any) -> None:
     versao = bundle["version"]
     if not isinstance(versao, str) or not versao.strip():
         problemas.append(f"version deve ser string não vazia, recebido {versao!r}")
+
+    pipeline_ver = bundle["pipeline_version"]
+    if not isinstance(pipeline_ver, str) or not pipeline_ver.strip():
+        problemas.append(f"pipeline_version deve ser string não vazia, recebido {pipeline_ver!r}")
 
     limiar = bundle["limiar"]
     if not _numero_real(limiar) or not (0.0 < float(limiar) < 1.0):

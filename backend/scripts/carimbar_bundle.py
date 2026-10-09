@@ -37,6 +37,7 @@ def main() -> None:
         sys.exit(f"Recusado: xgb_denso tem {n_xgb} features, contrato exige {FEATURE_COUNT}. Retreine o modelo.")
 
     bundle["version"] = args.versao or manifest.get("model_version") or "v1"
+    bundle["pipeline_version"] = manifest.get("pipeline_version", "1.0")
     bundle["feature_order"] = list(FEATURE_ORDER)
     bundle["feature_count"] = FEATURE_COUNT
     bundle["feature_names_estilo"] = list(ESTILO_FEATURE_NAMES)
@@ -45,7 +46,20 @@ def main() -> None:
     if not os.path.exists(backup):
         os.replace(args.caminho, backup)
         print(f"Backup do original: {backup}")
+        
     joblib.dump(bundle, args.caminho, compress=3)
+
+    # Recalcula o SHA256 do arquivo joblib carimbado para não quebrar o manifesto
+    import hashlib
+    sha256_hash = hashlib.sha256()
+    with open(args.caminho, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    
+    # Salva o novo hash no manifesto
+    manifest["model_hash_sha256"] = sha256_hash.hexdigest()
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=4)
 
     # Mesma validação do startup da API (contrato + manifesto + inferência de fumaça)
     carregar_bundle_stacking(args.caminho)
