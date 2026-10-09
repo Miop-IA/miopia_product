@@ -332,21 +332,36 @@ def treinar_stacking(
     validar_bundle(bundle)
 
     if output_path:
+        import hashlib
+        import tempfile
+        import shutil
+
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        joblib.dump(bundle, output_path, compress=3)
-        logger.info(f"Bundle serializado com sucesso em: {output_path}")
+        temp_dir = tempfile.mkdtemp(dir=os.path.dirname(output_path))
         
-        # Gerar o manifest JSON
-        manifest_path = os.path.join(os.path.dirname(output_path), "model_manifest.json")
+        temp_model_path = os.path.join(temp_dir, os.path.basename(output_path))
+        temp_manifest_path = os.path.join(temp_dir, "model_manifest.json")
+        
         try:
+            # Salvar modelo temporário
+            joblib.dump(bundle, temp_model_path, compress=3)
+            
+            # Calcular SHA256 do arquivo joblib
+            sha256_hash = hashlib.sha256()
+            with open(temp_model_path, "rb") as f:
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            model_hash = sha256_hash.hexdigest()
+
+            # Gerar manifesto
             import json, subprocess, sklearn, xgboost, spacy
             try:
                 commit_hash = subprocess.check_output(
                     ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
                 ).decode("utf-8").strip()
             except Exception:
-                commit_hash = "desconhecido"  # fora de um repositório git (Docker, Render, zip)
-            
+                commit_hash = "desconhecido"
+                
             manifest = {
                 "model_version": bundle["version"],
                 "pipeline_version": "1.0",
@@ -368,13 +383,25 @@ def treinar_stacking(
                 "n_grupos_treino": bundle["n_grupos_treino"],
                 "n_grupos_teste": bundle["n_grupos_teste"],
                 "feature_count": int(bundle["xgb_denso"].n_features_in_),
-                "training_date": datetime.now(timezone.utc).isoformat()
+                "training_date": datetime.now(timezone.utc).isoformat(),
+                "model_hash_sha256": model_hash
             }
-            with open(manifest_path, "w", encoding="utf-8") as f:
+            
+            with open(temp_manifest_path, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=4)
-            logger.info(f"Manifest serializado com sucesso em: {manifest_path}")
+                
+            # Mover atomicamente (os.replace garante overwrite)
+            manifest_path = os.path.join(os.path.dirname(output_path), "model_manifest.json")
+            os.replace(temp_manifest_path, manifest_path)
+            os.replace(temp_model_path, output_path)
+            
+            logger.info(f"Bundle e manifest serializados atomicamente com sucesso em: {output_path}")
+            
         except Exception as e:
-            logger.error(f"Erro ao gerar model_manifest.json: {e}")
+            logger.error(f"Erro durante o empacotamento atômico: {e}")
+            raise
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     return bundle
 
@@ -484,7 +511,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Treina o bundle Stacking Miop.IA.")
     parser.add_argument("--dados-dir", default=os.path.join(_BACKEND_DIR, "api", "data"),
                         help="Pasta com dataset_11.csv e fake_br_master.csv")
-    parser.add_argument("--saida", default=os.path.join(_BACKEND_DIR, "models", "stacking_miopia_v2.joblib"))
+    parser.add_argument("--saida", default=os.path.join(_BACKEND_DIR, "models", "stacking_miopia_v3.joblib"))
     parser.add_argument("--versao", default=None, help="Identificador de versão gravado no bundle")
     args = parser.parse_args()
 
