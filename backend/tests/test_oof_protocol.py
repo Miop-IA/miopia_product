@@ -53,10 +53,12 @@ def test_metamodelo_usa_oof(tmp_path):
         "texto_cru": ["Texto dummy cruel para teste."] * N,
         "texto_limpo": ["texto dummy limpo"] * N,
         "texto_lematizado": ["texto dummy lema"] * N,
+        "grupo_identidade": [f"grupo_{i}" for i in range(N)]
     })
 
     df_val = df_dummy.copy()
     df_val["id_noticia"] = list(range(101, 101+N))
+    df_val["grupo_identidade"] = [f"grupo_{i}" for i in range(101, 101+N)]
     for f in ESTILO_FEATURE_NAMES:
         df_dummy[f] = np.random.rand(N)
         df_val[f] = np.random.rand(N)

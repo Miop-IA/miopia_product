@@ -60,8 +60,8 @@ def test_sobreposicao_treino_teste():
         
     from train.train import treinar_stacking
 
-    df_treino = pd.DataFrame({"id_noticia": [1, 2, 3], "target": [0, 1, 0]})
-    df_val = pd.DataFrame({"id_noticia": [3, 4, 5], "target": [0, 1, 0]})
+    df_treino = pd.DataFrame({"grupo_identidade": [1, 2, 3], "target": [0, 1, 0]})
+    df_val = pd.DataFrame({"grupo_identidade": [3, 4, 5], "target": [0, 1, 0]})
     
     import pytest
     with pytest.raises(ValueError, match="Sobreposição detectada"):
