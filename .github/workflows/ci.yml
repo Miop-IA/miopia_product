@@ -65,17 +65,12 @@ jobs:
         cd backend
         pytest -v
 
-    - name: Run Benchmark da Extensão
-      run: |
-        cd frontend/benchmark
-        npm run benchmark
-
     - name: Validação de Conjunto (Modelo + Manifesto + Readiness)
       run: |
         cd backend
         python -c "import logging; logging.basicConfig(level=logging.INFO); from api.inferencia import carregar_bundle_stacking; carregar_bundle_stacking(); print('Modelo validado como conjunto único!')"
 
-    - name: Validação E2E (Sistema Real na Rede)
+    - name: Validação E2E e Benchmark (Sistema Real na Rede)
       env:
         DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname?sslmode=disable"
       run: |
@@ -118,3 +113,7 @@ jobs:
         curl -s -S --fail-with-body -X POST http://localhost:8000/avaliar \
           -H "Content-Type: application/json" \
           -d "{\"noticia_id\": $ID, \"client_id\": \"ci-runner\", \"avaliacao\": 1}"
+
+        # Run Benchmark da Extensão
+        cd ../frontend/benchmark
+        npm run benchmark
