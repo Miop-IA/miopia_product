@@ -7,18 +7,15 @@ import joblib
 import numpy as np
 import pandas as pd
 import scipy.stats
-import random
 
 # Fixando sementes globais para reprodutibilidade absoluta (Fase 21)
-np.random.seed(42)
-random.seed(42)
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
-from sklearn.model_selection import GroupShuffleSplit, GroupKFold
+from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
@@ -71,7 +68,7 @@ def treinar_stacking(
 ) -> Dict:
     """
     Treina os 3 ramos do Stacking Ensemble e o metamodelo de Regressão Logística
-    usando previsões Out-of-Fold (OOF) baseadas no GroupKFold por id_noticia.
+    usando previsões Out-of-Fold (OOF) baseadas no StratifiedGroupKFold por grupo_identidade.
     """
     if df_val is None:
         raise ValueError("O conjunto de teste/validação (df_val) é obrigatório para evitar avaliação viciada no treino.")
@@ -90,8 +87,8 @@ def treinar_stacking(
     # -------------------------------------------------------------
     # 0. Geração de Predições Out-of-Fold (OOF)
     # -------------------------------------------------------------
-    logger.info("Gerando predições OOF com GroupKFold (5 splits)...")
-    gkf = GroupKFold(n_splits=5)
+    logger.info("Gerando predições OOF com StratifiedGroupKFold (5 splits)...")
+    gkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
     
     p_char_oof = np.zeros(len(df_treino))
     p_word_oof = np.zeros(len(df_treino))
@@ -108,7 +105,7 @@ def treinar_stacking(
         X_char_fold_train = tfidf_char_fold.fit_transform(df_fold_train["texto_cru"])
         X_char_fold_val = tfidf_char_fold.transform(df_fold_val["texto_cru"])
         # Usa GroupKFold com 3 splits para calibração interna respeitando id_noticia
-        cv_char_fold = list(GroupKFold(n_splits=3).split(X_char_fold_train, y_fold_train, groups=df_fold_train["grupo_identidade"]))
+        cv_char_fold = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(X_char_fold_train, y_fold_train, groups=df_fold_train["grupo_identidade"]))
         svm_char_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=cv_char_fold)
         svm_char_fold.fit(X_char_fold_train, y_fold_train)
         p_char_oof[val_idx] = svm_char_fold.predict_proba(X_char_fold_val)[:, 1]
@@ -118,7 +115,7 @@ def treinar_stacking(
         X_word_fold_train = tfidf_word_fold.fit_transform(df_fold_train["texto_limpo"])
         X_word_fold_val = tfidf_word_fold.transform(df_fold_val["texto_limpo"])
         # Usa GroupKFold com 3 splits para calibração interna respeitando id_noticia
-        cv_word_fold = list(GroupKFold(n_splits=3).split(X_word_fold_train, y_fold_train, groups=df_fold_train["grupo_identidade"]))
+        cv_word_fold = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(X_word_fold_train, y_fold_train, groups=df_fold_train["grupo_identidade"]))
         svm_word_fold = CalibratedClassifierCV(estimator=LinearSVC(C=1.0, random_state=42, max_iter=2000), cv=cv_word_fold)
         svm_word_fold.fit(X_word_fold_train, y_fold_train)
         p_word_oof[val_idx] = svm_word_fold.predict_proba(X_word_fold_val)[:, 1]
@@ -164,7 +161,7 @@ def treinar_stacking(
     X_char_train = tfidf_char.fit_transform(df_treino["texto_cru"])
     base_svm_char = LinearSVC(C=1.0, random_state=42, max_iter=2000)
     # Calibração explícita group-aware para o modelo final
-    cv_char_final = list(GroupKFold(n_splits=3).split(X_char_train, y_train, groups=df_treino["grupo_identidade"]))
+    cv_char_final = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(X_char_train, y_train, groups=df_treino["grupo_identidade"]))
     svm_char = CalibratedClassifierCV(estimator=base_svm_char, cv=cv_char_final)
     svm_char.fit(X_char_train, y_train)
 
@@ -172,7 +169,7 @@ def treinar_stacking(
     X_word_train = tfidf_word.fit_transform(df_treino["texto_limpo"])
     base_svm_word = LinearSVC(C=1.0, random_state=42, max_iter=2000)
     # Calibração explícita group-aware para o modelo final
-    cv_word_final = list(GroupKFold(n_splits=3).split(X_word_train, y_train, groups=df_treino["grupo_identidade"]))
+    cv_word_final = list(StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42).split(X_word_train, y_train, groups=df_treino["grupo_identidade"]))
     svm_word = CalibratedClassifierCV(estimator=base_svm_word, cv=cv_word_final)
     svm_word.fit(X_word_train, y_train)
 

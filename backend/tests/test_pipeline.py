@@ -69,15 +69,15 @@ def test_sobreposicao_treino_teste():
 
 
 def test_ausencia_intersecao_grupos_calibracao():
-    """Verifica se o GroupKFold impede interseção de grupos entre treino e validação, garantindo calibração group-aware segura."""
-    from sklearn.model_selection import GroupKFold
+    """Verifica se o StratifiedGroupKFold impede interseção de grupos entre treino e validação, garantindo calibração group-aware segura."""
+    from sklearn.model_selection import StratifiedGroupKFold
     import numpy as np
 
     X = np.random.rand(10, 2)
     y = np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1])
     groups = np.array([1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
 
-    gkf = GroupKFold(n_splits=3)
+    gkf = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42)
     for train_idx, val_idx in gkf.split(X, y, groups):
         train_groups = set(groups[train_idx])
         val_groups = set(groups[val_idx])

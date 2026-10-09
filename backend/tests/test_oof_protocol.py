@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import pandas as pd
 from unittest.mock import patch, MagicMock
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import StratifiedGroupKFold
 
 # Importa o módulo de treino para podermos testar o fluxo
 import sys
@@ -13,7 +13,7 @@ from api.feature_contract import ESTILO_FEATURE_NAMES
 
 def test_garantia_kfold_sem_vazamento():
     """
-    Testa rigorosamente a teoria e prática do GroupKFold usado no OOF.
+    Testa rigorosamente a teoria e prática do StratifiedGroupKFold usado no OOF.
     Garante que:
     1. Nenhum grupo aparece simultaneamente no treino e validação do mesmo fold.
     2. Cada amostra aparece exatamente UMA VEZ como validação.
@@ -25,7 +25,7 @@ def test_garantia_kfold_sem_vazamento():
     groups_train = df_treino["id_noticia"].values
     y_train = df_treino["target"].values
 
-    gkf = GroupKFold(n_splits=3)
+    gkf = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42)
     val_indices = []
     
     for train_idx, val_idx in gkf.split(df_treino, y_train, groups=groups_train):
