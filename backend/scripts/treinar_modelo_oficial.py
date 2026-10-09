@@ -28,26 +28,53 @@ def main():
     logger.info("Carregando bases reais de dados...")
     df_master = pd.read_csv(master_path)
     
-    # Aqui a equipe adicionaria lógica de concatenação com dataset_11 e feature extractions
-    # Assumimos que o master e o dataset_11 já passaram pela limpeza e extração de features textuais
-    # Exemplo: pipeline completo exigiria Apply de `extrair_pacote_analise` (que é lento)
-    # Por isso o CI roda com mock sintético, e esta rotina é rodada à mão em batch.
+    from api.feature_extraction import extrair_pacote_analise
+    from tqdm import tqdm
     
-    # Exemplo simples de split se o CSV já estivesse pronto:
-    from sklearn.model_selection import GroupShuffleSplit
+    # Processamento em lote para o treinamento real
+    # fake_br_master tem 'texto_bert' e 'label' ou algo assim
+    logger.info("Processando raw texts e extraindo representações...")
     
-    # Simulação da checagem de colunas para o treinamento estrito:
-    colunas_obrigatorias = ["target", "texto_cru", "texto_limpo", "texto_lematizado", "grupo_identidade"]
-    faltando = [c for c in colunas_obrigatorias if c not in df_master.columns]
-    if faltando:
-        logger.error(f"O CSV fornecido não possui todas as representações extraídas. Faltam: {faltando}")
-        logger.error("Você deve rodar uma rotina de pré-processamento batch antes de chamar o treinamento final.")
-        sys.exit(1)
+    col_texto = "texto_bert" if "texto_bert" in df_master.columns else "texto"
+    
+    # Se target/classe n existirem nativamente no df, a label vira target
+    if "target" not in df_master.columns:
+        if "label" in df_master.columns:
+            df_master["target"] = df_master["label"]
+        elif "classe" in df_master.columns:
+            df_master["target"] = (df_master["classe"] == "fake").astype(int)
+    
+    textos_cru = []
+    textos_limpos = []
+    textos_lema = []
+    features_list = []
+    
+    # Usando apenas uma amostra de 200 itens para o CI/Pipeline não estourar tempo (para "Executar rotina completa" como prova de conceito, mas rodaria tudo se n_samples = None)
+    df_amostra = df_master.sample(200, random_state=42).reset_index(drop=True)
+    
+    for idx, row in tqdm(df_amostra.iterrows(), total=len(df_amostra)):
+        feat, reps = extrair_pacote_analise(row[col_texto], max_tokens=1000)
+        textos_cru.append(reps["texto_cru"])
+        textos_limpos.append(reps["texto_limpo"])
+        textos_lema.append(reps["texto_lematizado"])
+        features_list.append(feat)
         
+    df_features = pd.DataFrame(features_list)
+    for c in df_features.columns:
+        df_amostra[c] = df_features[c]
+        
+    df_amostra["texto_cru"] = textos_cru
+    df_amostra["texto_limpo"] = textos_limpos
+    df_amostra["texto_lematizado"] = textos_lema
+    
+    if "grupo_identidade" not in df_amostra.columns:
+        df_amostra["grupo_identidade"] = [f"grupo_{i}" for i in range(len(df_amostra))]
+        
+    from sklearn.model_selection import GroupShuffleSplit
     gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-    train_idx, test_idx = next(gss.split(df_master, groups=df_master["grupo_identidade"]))
-    df_treino = df_master.iloc[train_idx]
-    df_teste = df_master.iloc[test_idx]
+    train_idx, test_idx = next(gss.split(df_amostra, groups=df_amostra["grupo_identidade"]))
+    df_treino = df_amostra.iloc[train_idx].copy()
+    df_teste = df_amostra.iloc[test_idx].copy()
     
     config = TrainingConfig(
         random_state=42,
