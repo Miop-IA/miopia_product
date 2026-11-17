@@ -1,0 +1,110 @@
+# ==============================================================================
+# Ambientes Virtuais (Python & Node)
+# ==============================================================================
+.venv/
+venv/
+ENV/
+env/
+backend/.venv/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==============================================================================
+# Variáveis de Ambiente e Credenciais (Segurança / LGPD)
+# ==============================================================================
+.env
+.env.local
+.env.*
+.env.*.local
+backend/.env
+backend/.env.*
+*.key
+*.pem
+*.cert
+*.crt
+
+# NUNCA ignorar os modelos de exemplo de configuração
+!.env.example
+!backend/.env.example
+!*.env.example
+
+# ==============================================================================
+# Python: Bytecode, Cache e Compilação
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+*.pyo
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==============================================================================
+# Ferramentas de Teste, Qualidade e Cobertura
+# ==============================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ==============================================================================
+# Bancos de Dados Locais (SQLite e Dumps)
+# ==============================================================================
+*miopia_local.db
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+
+# ==============================================================================
+# Logs e Arquivos Temporários de Sistema / SO
+# ==============================================================================
+*.log
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ==============================================================================
+# IDEs e Editores de Código
+# ==============================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# ==============================================================================
+# Modelos e Artefatos de IA Necessários para Execução e Deploy
+# ==============================================================================
+# NUNCA ignorar os modelos e artefatos de IA necessários para o deploy
+!backend/models/
+!backend/models/*

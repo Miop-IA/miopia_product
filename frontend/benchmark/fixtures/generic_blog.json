@@ -1,0 +1,16 @@
+{
+    "url": "https://blogdesconhecido.com/noticia-local",
+    "expected_method": "mozilla_readability",
+    "must_include": [
+        "Um texto que não possui",
+        "Esta abordagem garante que portais",
+        "Entretanto, se a página"
+    ],
+    "must_not_include": [
+        "Acesse nossos outros conteúdos diários",
+        "Muito legal!",
+        "Discordo de tudo isso"
+    ],
+    "words": 94,
+    "tolerance": 10
+}

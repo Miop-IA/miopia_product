@@ -1,0 +1,25 @@
+# Core Framework e Servidor ASGI
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic-settings==2.5.2
+
+# Banco de Dados e ORM (PostgreSQL / Neon)
+SQLAlchemy==2.0.35
+psycopg2-binary>=2.9.9
+alembic==1.13.3
+
+# Machine Learning, Inferência e Serialização
+scikit-learn==1.9.1
+xgboost==2.1.1
+joblib==1.4.2
+numpy==2.5.3
+scipy==1.18.1
+pandas==2.2.3
+
+# Processamento de Linguagem Natural (NLP)
+spacy==3.8.16
+pyspellchecker==0.8.2
+nltk==3.9.1
+
+# Modelo spaCy pt_core_news_lg (download direto via release oficial)
+pt_core_news_lg @ https://github.com/explosion/spacy-models/releases/download/pt_core_news_lg-3.8.0/pt_core_news_lg-3.8.0-py3-none-any.whl

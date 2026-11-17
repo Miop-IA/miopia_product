@@ -1,0 +1,119 @@
+name: CI Backend
+
+on:
+  push:
+    branches: [ "main", "dev", "feature/*" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: dbname
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+        
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Python dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio httpx
+
+    - name: Install Node dependencies
+      run: |
+        cd frontend/benchmark
+        npm install
+
+    - name: Validações de Estrutura (Alembic)
+      env:
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname?sslmode=disable"
+      run: |
+        cd backend
+        alembic upgrade head
+
+    - name: Run Pytest
+      env:
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname?sslmode=disable"
+      run: |
+        cd backend
+        pytest -v
+
+    - name: Validação de Conjunto (Modelo + Manifesto + Readiness)
+      run: |
+        cd backend
+        python -c "import logging; logging.basicConfig(level=logging.INFO); from api.inferencia import carregar_bundle_stacking; carregar_bundle_stacking(); print('Modelo validado como conjunto único!')"
+
+    - name: Validação E2E e Benchmark (Sistema Real na Rede)
+      env:
+        DATABASE_URL: "postgresql+psycopg2://user:password@localhost:5432/dbname?sslmode=disable"
+      run: |
+        cd backend
+        uvicorn api.main:app --host 0.0.0.0 --port 8000 &
+        
+        API_UP=0
+        for i in {1..30}; do
+          if curl -s http://localhost:8000/health | grep -q "online"; then
+            echo "API online e pronta para testes E2E!"
+            API_UP=1
+            break
+          fi
+          echo "Aguardando inicialização da API ($i/30)..."
+          sleep 1
+        done
+
+        if [ "$API_UP" -eq 0 ]; then
+          echo "Erro: API não inicializou a tempo."
+          exit 1
+        fi
+
+        # Check /ready
+        READY_STATUS=$(curl -s http://localhost:8000/ready)
+        if echo "$READY_STATUS" | grep -q '"status":"ready"'; then
+          echo "API /ready OK!"
+        else
+          echo "Erro: API /ready falhou retornando $READY_STATUS"
+          exit 1
+        fi
+
+        # POST /analisar
+        RESPONSE=$(curl -s -S --fail-with-body -X POST http://localhost:8000/analisar \
+          -H "Content-Type: application/json" \
+          -d '{"texto": "O Ministério da Fazenda divulgou hoje uma nota oficial com as diretrizes econômicas e parâmetros fiscais que serão apresentados aos governadores na reunião marcada para o início do próximo mês em Brasília, com o objetivo de equilibrar as contas públicas e impulsionar novos investimentos estruturais no país.", "url": "http://teste.com"}')
+        echo "Resposta /analisar: $RESPONSE"
+        ID=$(echo "$RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin)['id'])")
+
+        # POST /avaliar
+        curl -s -S --fail-with-body -X POST http://localhost:8000/avaliar \
+          -H "Content-Type: application/json" \
+          -d "{\"noticia_id\": $ID, \"client_id\": \"ci-runner\", \"avaliacao\": 1}"
+
+        # Run Benchmark da Extensão
+        cd ../frontend/benchmark
+        npm run benchmark
